@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "JAL-NIVIKARAN",
+    "slug": "JAL-NIVIKARAN",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.jpg",
+    "scheme": "jalnivikaran",
+    "userInterfaceStyle": "automatic",
+
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.jpg",
+        "backgroundColor": "#0077b6"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "supabaseUrl": "https://irikfvqckqfxjtcvgfxr.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlyaWtmdnFja3FmeGp0Y3ZnZnhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyNDY3MDgsImV4cCI6MjA3MjgyMjcwOH0.8YseQboqIXIqVqxVgdVizIQFEYig4sDOeuviAgHgqZc"
+    }
+  }
+}
