@@ -3,27 +3,27 @@ import { useStations } from "@/providers/stations-provider";
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from "expo-router";
 import {
-  AlertTriangle,
-  ArrowRight,
-  Bell,
-  CheckCircle,
-  ChevronRight,
-  Droplet,
-  MapPin,
-  Plus,
-  Scale,
-  TrendingDown,
-  TrendingUp,
-  Zap
+    AlertTriangle,
+    ArrowRight,
+    Bell,
+    CheckCircle,
+    ChevronRight,
+    Droplet,
+    MapPin,
+    Plus,
+    Scale,
+    TrendingDown,
+    TrendingUp,
+    Zap
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef } from "react";
 import {
-  Animated,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -129,7 +129,7 @@ function HomeScreenContent() {
         <View style={styles.headerRight}>
           <TouchableOpacity 
             style={styles.headerButton}
-            onPress={() => router.push('/(tabs)/chatbot')}
+            onPress={() => router.push('/(tabs)/alerts')}
             activeOpacity={0.7}
           >
             <Bell size={22} color="#64748b" />

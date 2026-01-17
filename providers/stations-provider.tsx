@@ -284,9 +284,9 @@ const calculateDistance = (
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
@@ -344,9 +344,13 @@ const processStationWithRecharge = (station: Station): Station => {
 
   // Update status based on current water level (only if we have meaningful water level data)
   const getStatusFromWaterLevel = (level: number): Station["status"] => {
-    if (level > 20) return "critical"; // High water level (critical/red)
-    if (level >= 15 && level <= 20) return "warning"; // Moderate water level (warning/yellow)
-    return "normal"; // Normal water level (green)
+    // NEW CLASSIFICATION LOGIC (matching fetchStations):
+    // Safe: < 2.5 M
+    // Semi-critical: 2.5 M to 5 M
+    // Critical: > 5 M
+    if (level > 5) return "critical"; // Critical water level (red)
+    if (level >= 2.5 && level <= 5) return "warning"; // Semi-critical water level (yellow)
+    return "normal"; // Safe water level (green)
   };
 
   // Only update status if we have meaningful water level data (> 0)
@@ -464,14 +468,15 @@ interface StationsContextType {
     longitude: number,
     timeframe: "6m" | "1y" | "2y"
   ) => Promise<DatabaseReading[]>;
-  getAnalytics: () => { 
+  getAnalytics: () => {
     nearbyStationCount: number;
     avgWaterLevel: number;
     rechargeEvents: number;
     criticalStations: number;
-    nearbyStations: Station[]; 
-    regionalData: any 
+    nearbyStations: Station[];
+    regionalData: any
   };
+  getStationHealthScore: (station: Station) => number;
   requestLocationPermission: () => Promise<void>;
 }
 
@@ -530,19 +535,18 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Debug log for status assignment
     console.log(
-      `Station mapping: ${
-        row.name ?? row.station_id ?? row.Area_Name ?? "Unknown"
+      `Station mapping: ${row.name ?? row.station_id ?? row.Area_Name ?? "Unknown"
       } - Water Level: ${waterLevel}m - Status: ${status}`
     );
 
     return {
       id: String(
         row.id ??
-          row.station_id ??
-          row.Station_ID ??
-          row.P_Key ??
-          row.pkey ??
-          row.P_Key
+        row.station_id ??
+        row.Station_ID ??
+        row.P_Key ??
+        row.pkey ??
+        row.P_Key
       ),
       name: (row.name ??
         row.station_id ??
@@ -570,16 +574,16 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
         row.Dissolved_Oxygen_mg_L != null
           ? Number(row.Dissolved_Oxygen_mg_L)
           : row.oxygen_level != null
-          ? Number(row.oxygen_level)
-          : row.oxygen != null
-          ? Number(row.oxygen)
-          : undefined,
+            ? Number(row.oxygen_level)
+            : row.oxygen != null
+              ? Number(row.oxygen)
+              : undefined,
       temperature:
         row.Temperature_C != null
           ? Number(row.Temperature_C)
           : row.temperature != null
-          ? Number(row.temperature)
-          : undefined,
+            ? Number(row.temperature)
+            : undefined,
       week: row.week ?? getWeekNumber(row.date ?? row.Date),
       recentReadings: [
         {
@@ -613,8 +617,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Debug log for pinpoint status assignment
     console.log(
-      `Pinpoint mapping: ${
-        row.Area_Name ?? "Unknown"
+      `Pinpoint mapping: ${row.Area_Name ?? "Unknown"
       } - DWLR_Status: '${dwlrStatus}' - Status: ${status}`
     );
 
@@ -646,8 +649,9 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // Fetch stations from Supabase using st_map_data table
-  const fetchStations = useCallback(async () => {
+  const fetchStations = useCallback(async (userLat?: number, userLon?: number) => {
     console.log("fetchStations called - attempting to fetch from st_map_data");
+    console.log("User location:", userLat, userLon);
 
     // Check if supabase is configured
     console.log("Supabase client available:", !!supabase);
@@ -670,111 +674,146 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       console.log("Connection successful, total rows:", testData);
 
       // Fetch station data from st_map_data table
-      console.log("Fetching actual data...");
-      const { data: stationData, error: stationErr } = await supabase
+      console.log("Fetching actual data from st_map_data...");
+
+      // Get all stations - fetch all columns to see what's available
+      const { data: allStationData, error: stationErr } = await supabase
         .from("st_map_data")
-        .select(
-          "st_code, Area_Name, Latitude, Longitude, water_level, full_address_generated"
-        )
-        .order("st_code", { ascending: true });
+        .select("*"); // Select all columns
 
       if (stationErr) {
         console.log("Fetch error:", stationErr);
         throw stationErr;
       }
 
-      console.log("Raw st_map_data from Supabase:", stationData);
-      console.log("Number of rows fetched:", stationData?.length || 0);
-      console.log("First row example:", stationData?.[0]);
+      console.log("Raw st_map_data from Supabase:", allStationData?.length || 0, "records");
+      console.log("First row example (all columns):", allStationData?.[0]);
 
-      // Map st_map_data rows to Station objects (each station is unique by st_code)
-      const mappedFromStationData: Station[] = (stationData ?? [])
-        .filter((row: any) => {
-          console.log("Checking row:", {
-            st_code: row.st_code,
-            Area_Name: row.Area_Name,
-            Latitude: row.Latitude,
-            Longitude: row.Longitude,
-            water_level: row.water_level,
-          });
-          return (
-            row.st_code &&
-            (row.Latitude || row.Latitude === 0) &&
-            (row.Longitude || row.Longitude === 0)
-          );
-        })
-        .map((row: any) => {
-          const lat = Number(row.Latitude);
-          const lon = Number(row.Longitude);
-          const level = Number(row.water_level ?? 0);
-          const dateStr = new Date().toISOString();
+      // Log all available column names
+      if (allStationData && allStationData.length > 0) {
+        console.log("Available columns:", Object.keys(allStationData[0]));
+      }
 
-          console.log("Mapping station:", {
-            id: row.st_code,
-            name: row.Area_Name,
-            lat: lat,
-            lon: lon,
-            level: level,
-          });
+      // Filter out stations with invalid coordinates
+      let stationsArray = (allStationData ?? []).filter((row: any) => {
+        const lat = Number(row.Latitude);
+        const lon = Number(row.Longitude);
+        return Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0;
+      });
 
-          return {
-            id: String(row.st_code),
-            name: String(row.Area_Name ?? row.st_code),
-            district:
-              String(row.full_address_generated ?? "")
-                .split(",")[1]
-                ?.trim() ?? "",
-            state:
-              String(row.full_address_generated ?? "")
-                .split(",")[2]
-                ?.trim() ?? "",
-            latitude: Number.isFinite(lat) ? lat : 0,
-            longitude: Number.isFinite(lon) ? lon : 0,
-            currentLevel: Number.isFinite(level) ? level : 0,
-            status: "normal",
-            batteryLevel: 100,
-            signalStrength: 100,
-            availabilityIndex: 1,
-            lastUpdated: dateStr,
-            aquiferType: "",
-            specificYield: 0,
-            installationDate: new Date().toISOString().slice(0, 10),
-            depth: 0,
-            oxygenLevel: undefined,
-            temperature: undefined,
-            week: undefined,
-            recentReadings: [
-              {
-                timestamp: dateStr,
-                level: Number.isFinite(level) ? level : 0,
-                temperature: undefined,
-              },
-            ],
-            rechargeData: [],
-          } as Station;
-        })
-        .filter(
-          (s) => Number.isFinite(s.latitude) && Number.isFinite(s.longitude)
-        );
+      console.log(`Found ${stationsArray.length} valid stations with coordinates`);
+
+      if (userLat !== undefined && userLon !== undefined) {
+        // Calculate distance for each station
+        stationsArray = stationsArray.map((row: any) => ({
+          ...row,
+          distance: calculateDistance(
+            userLat,
+            userLon,
+            Number(row.Latitude),
+            Number(row.Longitude)
+          ),
+        }));
+
+        // Sort by distance (nearest first) but show ALL stations on map
+        stationsArray.sort((a: any, b: any) => a.distance - b.distance);
+        console.log(`Showing all ${stationsArray.length} stations sorted by distance`);
+      } else {
+        // No user location, show all stations
+        console.log(`Showing all ${stationsArray.length} stations`);
+      }
+
+      // Map st_map_data rows to Station objects
+      const mappedStations: Station[] = stationsArray.map((row: any) => {
+        const lat = Number(row.Latitude);
+        const lon = Number(row.Longitude);
+        const level = Number(row.water_level ?? 0);
+        const dateStr = new Date().toISOString();
+
+        // NEW CLASSIFICATION LOGIC:
+        // Safe: < 2.5 M
+        // Semi-critical: 2.5 M to 5 M
+        // Critical: > 5 M
+        let status: Station["status"] = "normal";
+        if (level > 5) {
+          status = "critical";
+        } else if (level >= 2.5 && level <= 5) {
+          status = "warning"; // Semi-critical maps to "warning"
+        } else {
+          status = "normal"; // Safe maps to "normal"
+        }
+
+        // Build station name from available fields
+        // Use st_code as primary identifier, and full_address_generated for name
+        const stationCode = row.st_code || row.station_code || "";
+        const address = row.full_address_generated || row.address || "";
+        
+        let stationName = address || row.name || row.station_name || stationCode || "DWLR Station";
+        
+        // Add station code to name if available
+        if (stationCode && !stationName.includes(stationCode)) {
+          stationName = `${stationName} (${stationCode})`;
+        }
+        
+        // Get station ID - use st_code as primary ID
+        const stationId = stationCode || row.id || row.station_id || Math.random().toString();
+
+        const district = row.district || "";
+        const state = row.state || "";
+
+        console.log(`Mapped station: ${stationId} -> ${stationName} (Lat: ${lat}, Lon: ${lon}, Water Level: ${level}m, Status: ${status})`);
+
+        return {
+          id: String(stationId),
+          name: stationName,
+          district: district,
+          state: state,
+          latitude: Number.isFinite(lat) ? lat : 0,
+          longitude: Number.isFinite(lon) ? lon : 0,
+          currentLevel: Number.isFinite(level) ? level : 0,
+          status: status,
+          batteryLevel: 75 + Math.random() * 25, // Random 75-100%
+          signalStrength: 60 + Math.random() * 40, // Random 60-100%
+          availabilityIndex: 0.7 + Math.random() * 0.3, // Random 0.7-1.0
+          lastUpdated: dateStr,
+          aquiferType: "Alluvial",
+          specificYield: 0.15,
+          installationDate: new Date().toISOString().slice(0, 10),
+          depth: 30 + Math.random() * 90, // Random 30-120m
+          oxygenLevel: undefined,
+          temperature: 24 + Math.random() * 6, // Random 24-30°C
+          week: undefined,
+          recentReadings: [
+            {
+              timestamp: dateStr,
+              level: Number.isFinite(level) ? level : 0,
+              temperature: 24 + Math.random() * 6,
+            },
+          ],
+          rechargeData: [],
+        };
+      });
+
 
       console.log(
-        "Supabase st_map_data rows:",
-        stationData?.length ?? 0,
+        "st_map_data rows:",
+        allStationData?.length ?? 0,
         "mapped(valid):",
-        mappedFromStationData.length
+        mappedStations.length
       );
 
-      if (mappedFromStationData.length === 0) {
+      if (mappedStations.length === 0) {
         console.log("No valid stations found, using mock data instead");
         const processedMockStations = mockStations
-          .slice(0, 5)
+          .slice(0, 10)
           .map(processStationWithRecharge);
         setStations(processedMockStations);
       } else {
-        const processedStations = mappedFromStationData.map(
+        const processedStations = mappedStations.map(
           processStationWithRecharge
         );
         setStations(processedStations);
+        console.log(`Successfully loaded ${processedStations.length} stations`);
       }
     } catch (err: any) {
       console.log("Supabase fetch error:", err);
@@ -782,13 +821,14 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       // Fallback to mock stations if database fails
       console.log("Falling back to mock stations");
       const processedMockStations = mockStations
-        .slice(0, 5)
+        .slice(0, 10)
         .map(processStationWithRecharge);
-      setStations(processedMockStations); // Use first 5 mock stations as fallback
+      setStations(processedMockStations);
     } finally {
       setIsLoadingStations(false);
     }
   }, []);
+
 
   // Request location permission and get current location
   const requestLocationPermission = useCallback(async () => {
@@ -893,14 +933,14 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       // If no location, use first few stations for demo alerts
       const stationsToAnalyze = location
         ? stations.filter((station) => {
-            const distance = calculateDistance(
-              location.latitude,
-              location.longitude,
-              station.latitude,
-              station.longitude
-            );
-            return distance <= 50; // Within 50km
-          })
+          const distance = calculateDistance(
+            location.latitude,
+            location.longitude,
+            station.latitude,
+            station.longitude
+          );
+          return distance <= 50; // Within 50km
+        })
         : stations.slice(0, 4); // Use first 4 stations if no location
 
       stationsToAnalyze.forEach((station, index) => {
@@ -1024,10 +1064,14 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     requestLocationPermission();
   }, [requestLocationPermission]);
 
-  // Load stations on mount and on focus changes in future
+  // Load stations on mount and refetch when user location changes
   useEffect(() => {
-    fetchStations();
-  }, [fetchStations]);
+    if (userLocation) {
+      fetchStations(userLocation.latitude, userLocation.longitude);
+    } else {
+      fetchStations();
+    }
+  }, [fetchStations, userLocation]);
 
   const getStationById = useCallback(
     (id: string) => {
@@ -1083,6 +1127,58 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     []
   );
 
+  // Calculate groundwater health score (0-100) based on multiple factors
+  const getStationHealthScore = useCallback((station: Station): number => {
+    let score = 50; // Start with neutral score
+
+    // Factor 1: Water level status (40 points)
+    if (station.status === "normal") {
+      score += 40;
+    } else if (station.status === "warning") {
+      score += 20;
+    } else if (station.status === "critical") {
+      score += 0;
+    }
+
+    // Factor 2: Trend analysis (30 points)
+    if (station.recentReadings.length >= 2) {
+      const oldest = station.recentReadings[0].level;
+      const newest = station.recentReadings[station.recentReadings.length - 1].level;
+      const trend = newest - oldest;
+
+      if (trend > 0) {
+        // Positive trend (water level rising) is good
+        score += 30;
+      } else if (trend > -0.5) {
+        // Slight decline is acceptable
+        score += 15;
+      } else {
+        // Significant decline is concerning
+        score += 0;
+      }
+    }
+
+    // Factor 3: Battery level (10 points)
+    if (station.batteryLevel >= 80) {
+      score += 10;
+    } else if (station.batteryLevel >= 50) {
+      score += 5;
+    }
+
+    // Factor 4: Signal strength (10 points)
+    if (station.signalStrength >= 70) {
+      score += 10;
+    } else if (station.signalStrength >= 40) {
+      score += 5;
+    }
+
+    // Factor 5: Availability index (10 points)
+    score += station.availabilityIndex * 10;
+
+    // Clamp score between 0 and 100
+    return Math.max(0, Math.min(100, Math.round(score)));
+  }, []);
+
   const getAnalytics = useCallback(() => {
     // Use nearby stations instead of all stations for proximity-based analytics
     const relevantStations =
@@ -1091,9 +1187,9 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     const avgWaterLevel =
       relevantStations.length > 0
         ? relevantStations.reduce(
-            (sum, station) => sum + station.currentLevel,
-            0
-          ) / relevantStations.length
+          (sum, station) => sum + station.currentLevel,
+          0
+        ) / relevantStations.length
         : 0;
 
     // Calculate recharge events from nearby stations (mock for now, can be enhanced)
@@ -1101,7 +1197,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       (station) =>
         station.recentReadings.length > 1 &&
         station.recentReadings[station.recentReadings.length - 1].level >
-          station.recentReadings[0].level
+        station.recentReadings[0].level
     ).length;
 
     // Count critical stations from nearby stations
@@ -1141,6 +1237,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       getStationById,
       getStationReadings,
       getAnalytics,
+      getStationHealthScore,
       requestLocationPermission,
     }),
     [
@@ -1157,6 +1254,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       getStationById,
       getStationReadings,
       getAnalytics,
+      getStationHealthScore,
       requestLocationPermission,
     ]
   );

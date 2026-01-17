@@ -337,13 +337,13 @@ if (data.user) {
 
 // Function to get marker color based on water level
 function getMarkerColor(level) {
-  // Thresholds for water level status
-  // Green: < 3.5m (good water level)
-  // Yellow: 3.5m - 8m (moderate water level)
-  // Red: > 8m (critical water level)
-  if (level < 3.5) return '#22c55e'; // Green
-  if (level <= 8) return '#eab308';  // Yellow
-  return '#ef4444'; // Red
+  // Updated thresholds for water level status:
+  // Green: < 2.5m (safe water level)
+  // Yellow: 2.5m - 5m (semi-critical water level)
+  // Red: > 5m (critical water level)
+  if (level < 2.5) return '#22c55e'; // Green - Safe
+  if (level >= 2.5 && level <= 5) return '#eab308';  // Yellow - Semi-critical
+  return '#ef4444'; // Red - Critical
 }
 
 // Function to create colored marker icon
