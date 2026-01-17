@@ -1,24 +1,53 @@
 import { AnalyticsCard } from "@/components/analytics-card";
+import { DemandAvailabilityChart } from "@/components/demand-availability-chart";
+import { RainfallCorrelationChart } from "@/components/rainfall-correlation-chart";
+import { RateOfChangeChart } from "@/components/rate-of-change-chart";
+import { SeasonalBoxPlot } from "@/components/seasonal-box-plot";
+import { SeasonalPatternChart } from "@/components/seasonal-pattern-chart";
+import { StressIndexChart } from "@/components/stress-index-chart";
+import { StressWaterLevelChart } from "@/components/stress-water-level-chart";
 import { TrendChart } from "@/components/trend-chart";
+import { ZoneClassificationChart } from "@/components/zone-classification-chart";
+import { StationsProvider, useStations } from "@/providers/stations-provider";
 import {
-    StationsProvider,
-    useStations
-} from "@/providers/stations-provider";
-import { LinearGradient } from 'expo-linear-gradient';
+  aggregateStationReadings,
+  calculateDemandAvailability,
+  calculateRateOfChange,
+  calculateSeasonalPattern,
+  calculateStressIndex,
+  calculateStressWaterLevel,
+  classifyZones,
+  DemandAvailabilityData,
+  DistrictTrend,
+  processDistrictTrends,
+  processRainfallCorrelation,
+  processSeasonalData,
+  RainfallCorrelation,
+  RateOfChangeData,
+  SeasonalData,
+  SeasonalPatternData,
+  StressIndexData,
+  StressWaterLevelData,
+  ZoneData,
+} from "@/services/advanced-analytics-service";
+import { fetchNearbyStationsWithReadings } from "@/services/station-explorer-service";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import {
-    Download,
-    MapPin,
-    TrendingDown,
-    TrendingUp
+  Activity,
+  Download,
+  MapPin,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,11 +55,37 @@ function AnalyticsScreenContent() {
   const { stations, getAnalytics, getStationReadings } = useStations();
   const [selectedTimeframe, setSelectedTimeframe] = useState<
     "6m" | "1y" | "2y"
-  >("6m");
+  >("1y");
   const [averageChartData, setAverageChartData] = useState<
     { x: number; y: number; label: string }[]
   >([]);
   const [isLoadingChart, setIsLoadingChart] = useState(true);
+
+  // Advanced analytics state
+  const [seasonalData, setSeasonalData] = useState<SeasonalData[]>([]);
+  const [rainfallCorrelation, setRainfallCorrelation] = useState<
+    RainfallCorrelation[]
+  >([]);
+  const [rateOfChangeData, setRateOfChangeData] = useState<RateOfChangeData[]>(
+    [],
+  );
+  const [districtTrends, setDistrictTrends] = useState<DistrictTrend[]>([]);
+
+  // New analytics state
+  const [demandAvailability, setDemandAvailability] = useState<
+    DemandAvailabilityData[]
+  >([]);
+  const [stressIndex, setStressIndex] = useState<StressIndexData[]>([]);
+  const [zoneClassification, setZoneClassification] = useState<ZoneData[]>([]);
+  const [seasonalPattern, setSeasonalPattern] = useState<SeasonalPatternData[]>(
+    [],
+  );
+  const [stressWaterLevel, setStressWaterLevel] = useState<
+    StressWaterLevelData[]
+  >([]);
+
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(true);
+
   const analytics = getAnalytics();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -40,6 +95,106 @@ function AnalyticsScreenContent() {
     { key: "1y" as const, label: "1 Year" },
     { key: "2y" as const, label: "2 Years" },
   ];
+
+  // Fetch advanced analytics data from 15 stations
+  useEffect(() => {
+    const fetchAdvancedAnalytics = async () => {
+      try {
+        setIsLoadingAnalytics(true);
+
+        // Get user location (use Patna as default)
+        const userLat = 25.5941;
+        const userLon = 85.1376;
+
+        // Fetch 15 nearest stations with their readings
+        const nearbyStations = await fetchNearbyStationsWithReadings(
+          userLat,
+          userLon,
+          15,
+          selectedTimeframe,
+        );
+
+        if (nearbyStations.length === 0) {
+          setIsLoadingAnalytics(false);
+          return;
+        }
+
+        // Aggregate all station readings
+        const allReadings = nearbyStations.map((station) =>
+          station.readings.map((r) => ({
+            date: r.date,
+            waterLevel: r.waterLevel,
+          })),
+        );
+
+        const aggregatedReadings = aggregateStationReadings(allReadings);
+
+        // Process seasonal data
+        const seasonal = processSeasonalData(aggregatedReadings);
+        setSeasonalData(seasonal);
+
+        // Process rainfall correlation
+        const rainfall = processRainfallCorrelation(aggregatedReadings);
+        setRainfallCorrelation(rainfall);
+
+        // Calculate rate of change
+        const rateChange = calculateRateOfChange(aggregatedReadings);
+        setRateOfChangeData(rateChange);
+
+        // Group stations by district for comparison
+        const districtGroups = new Map<string, typeof aggregatedReadings>();
+        nearbyStations.forEach((station) => {
+          const district = station.district;
+          if (!districtGroups.has(district)) {
+            districtGroups.set(district, []);
+          }
+          station.readings.forEach((r) => {
+            districtGroups.get(district)!.push({
+              date: r.date,
+              waterLevel: r.waterLevel,
+            });
+          });
+        });
+
+        // Calculate new analytics
+        // 1. Demand vs Availability
+        const demandAvail = calculateDemandAvailability(aggregatedReadings);
+        setDemandAvailability(demandAvail);
+
+        // 2. Stress Index
+        const stress = calculateStressIndex(aggregatedReadings);
+        setStressIndex(stress);
+
+        // 3. Zone Classification
+        const zones = classifyZones(allReadings);
+        setZoneClassification(zones);
+
+        // 4. Seasonal Pattern
+        const seasonalPatternData =
+          calculateSeasonalPattern(aggregatedReadings);
+        setSeasonalPattern(seasonalPatternData);
+
+        // 5. Stress vs Water Level
+        const stressLevel = calculateStressWaterLevel(allReadings);
+        setStressWaterLevel(stressLevel);
+
+        // Take top 5 districts with most data
+        const districtArray = Array.from(districtGroups.entries())
+          .map(([district, readings]) => ({ district, readings }))
+          .sort((a, b) => b.readings.length - a.readings.length)
+          .slice(0, 5);
+
+        const districtComparison = processDistrictTrends(districtArray);
+        setDistrictTrends(districtComparison);
+      } catch (error) {
+        console.error("Error fetching advanced analytics:", error);
+      } finally {
+        setIsLoadingAnalytics(false);
+      }
+    };
+
+    fetchAdvancedAnalytics();
+  }, [selectedTimeframe]);
 
   // Fetch readings for nearby stations and calculate averages
   useEffect(() => {
@@ -57,8 +212,8 @@ function AnalyticsScreenContent() {
           getStationReadings(
             station.latitude,
             station.longitude,
-            selectedTimeframe
-          )
+            selectedTimeframe,
+          ),
         );
 
         const allStationReadings = await Promise.all(allReadingsPromises);
@@ -110,7 +265,7 @@ function AnalyticsScreenContent() {
 
   return (
     <LinearGradient
-      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      colors={["#FFFFFF", "#FFF7EA", "#FFE2AF"]}
       style={[styles.container, { paddingTop: insets.top }]}
     >
       {/* Header */}
@@ -164,23 +319,47 @@ function AnalyticsScreenContent() {
           <AnalyticsCard
             title="Avg Water Level"
             value={`${analytics.avgWaterLevel.toFixed(1)}m`}
-            icon={<TrendingDown size={20} color="#dc2626" />}
-            trend={{ value: 2.3, isPositive: false }}
-            backgroundColor="#fef2f2"
+            icon={
+              analytics.waterLevelTrend.isPositive ? (
+                <TrendingUp size={20} color="#059669" />
+              ) : (
+                <TrendingDown size={20} color="#dc2626" />
+              )
+            }
+            trend={analytics.waterLevelTrend}
+            backgroundColor={
+              analytics.waterLevelTrend.isPositive ? "#f0fdf4" : "#fef2f2"
+            }
           />
           <AnalyticsCard
             title="Recharge Events"
             value={analytics.rechargeEvents.toString()}
-            icon={<TrendingUp size={20} color="#059669" />}
-            trend={{ value: analytics.rechargeEvents, isPositive: true }}
-            backgroundColor="#f0fdf4"
+            icon={
+              analytics.rechargeEventsTrend.isPositive ? (
+                <TrendingUp size={20} color="#059669" />
+              ) : (
+                <TrendingDown size={20} color="#dc2626" />
+              )
+            }
+            trend={analytics.rechargeEventsTrend}
+            backgroundColor={
+              analytics.rechargeEventsTrend.isPositive ? "#f0fdf4" : "#fef2f2"
+            }
           />
           <AnalyticsCard
             title="Critical Stations"
             value={analytics.criticalStations.toString()}
-            icon={<TrendingDown size={20} color="#ea580c" />}
-            trend={{ value: analytics.criticalStations, isPositive: false }}
-            backgroundColor="#fff7ed"
+            icon={
+              analytics.criticalStationsTrend.isPositive ? (
+                <TrendingUp size={20} color="#059669" />
+              ) : (
+                <TrendingDown size={20} color="#dc2626" />
+              )
+            }
+            trend={analytics.criticalStationsTrend}
+            backgroundColor={
+              analytics.criticalStationsTrend.isPositive ? "#f0fdf4" : "#fef2f2"
+            }
           />
         </View>
 
@@ -206,51 +385,62 @@ function AnalyticsScreenContent() {
           )}
         </View>
 
-        {/* Regional Analysis */}
-        <View style={styles.regionalContainer}>
-          <Text style={styles.sectionTitle}>Regional Analysis</Text>
-          <View style={styles.regionalGrid}>
-            {analytics.regionalData.map((region: any) => (
-              <View key={region.state} style={styles.regionalCard}>
-                <View style={styles.regionalCardContent}>
-                  <Text style={styles.regionalState}>{region.state}</Text>
-                  <Text style={styles.regionalValue}>
-                    {region.avgLevel.toFixed(1)}m
-                  </Text>
-                  <View
-                    style={[
-                      styles.regionalStatus,
-                      {
-                        backgroundColor:
-                          region.status === "critical"
-                            ? "#fef2f2"
-                            : region.status === "warning"
-                            ? "#fff7ed"
-                            : "#f0fdf4",
-                      },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.regionalStatusText,
-                        {
-                          color:
-                            region.status === "critical"
-                              ? "#dc2626"
-                              : region.status === "warning"
-                              ? "#ea580c"
-                              : "#059669",
-                        },
-                      ]}
-                    >
-                      {region.status.toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
+        {/* Research-Grade Analytics Section */}
+        <View style={styles.sectionHeader}>
+          <Activity size={24} color="#0891b2" />
+          <Text style={styles.sectionHeaderText}>Research-Grade Analysis</Text>
         </View>
+
+        {isLoadingAnalytics ? (
+          <View style={styles.loadingAnalyticsContainer}>
+            <ActivityIndicator size="large" color="#0891b2" />
+            <Text style={styles.loadingAnalyticsText}>
+              Processing data from 15 monitoring stations...
+            </Text>
+          </View>
+        ) : (
+          <>
+            {/* Demand vs Availability */}
+            <View style={styles.advancedChartWrapper}>
+              <DemandAvailabilityChart data={demandAvailability} />
+            </View>
+
+            {/* Stress Index Trend */}
+            <View style={styles.advancedChartWrapper}>
+              <StressIndexChart data={stressIndex} />
+            </View>
+
+            {/* Zone Classification */}
+            <View style={styles.advancedChartWrapper}>
+              <ZoneClassificationChart data={zoneClassification} />
+            </View>
+
+            {/* Seasonal Water Pattern */}
+            <View style={styles.advancedChartWrapper}>
+              <SeasonalPatternChart data={seasonalPattern} />
+            </View>
+
+            {/* Stress vs Water Level */}
+            <View style={styles.advancedChartWrapper}>
+              <StressWaterLevelChart data={stressWaterLevel} />
+            </View>
+
+            {/* Seasonal Variability */}
+            <View style={styles.advancedChartWrapper}>
+              <SeasonalBoxPlot data={seasonalData} />
+            </View>
+
+            {/* Rate of Change Analysis */}
+            <View style={styles.advancedChartWrapper}>
+              <RateOfChangeChart data={rateOfChangeData} />
+            </View>
+
+            {/* Rainfall-Groundwater Correlation */}
+            <View style={styles.advancedChartWrapper}>
+              <RainfallCorrelationChart data={rainfallCorrelation} />
+            </View>
+          </>
+        )}
       </ScrollView>
     </LinearGradient>
   );
@@ -426,5 +616,46 @@ const styles = StyleSheet.create({
   regionalStatusText: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: "#e0f2fe",
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 16,
+    borderRadius: 12,
+  },
+  sectionHeaderText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0891b2",
+    marginLeft: 12,
+  },
+  advancedChartWrapper: {
+    paddingHorizontal: 20,
+    marginBottom: 4,
+  },
+  loadingAnalyticsContainer: {
+    backgroundColor: "white",
+    marginHorizontal: 20,
+    marginVertical: 20,
+    borderRadius: 16,
+    padding: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  loadingAnalyticsText: {
+    fontSize: 14,
+    color: "#64748b",
+    marginTop: 12,
+    textAlign: "center",
   },
 });

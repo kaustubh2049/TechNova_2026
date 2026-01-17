@@ -277,23 +277,25 @@ const calculateDistance = (
   lat1: number,
   lon1: number,
   lat2: number,
-  lon2: number
+  lon2: number,
 ): number => {
   const R = 6371; // Radius of the Earth in kilometers
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Returns distance in kilometers
 };
 
 // Calculate groundwater recharge using Water Table Fluctuation (WTF) method
 // R = Sy × ΔH
 const calculateGroundwaterRecharge = (
-  station: Station
+  station: Station,
 ): { date: string; amount: number; deltaH: number }[] => {
   const { recentReadings, specificYield } = station;
   if (recentReadings.length < 2) return [];
@@ -302,7 +304,7 @@ const calculateGroundwaterRecharge = (
 
   // Sort readings by timestamp
   const sortedReadings = [...recentReadings].sort(
-    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
   );
 
   // Calculate recharge for each consecutive pair of readings
@@ -356,7 +358,7 @@ const processStationWithRecharge = (station: Station): Station => {
   // Preserve original status for pinpoint stations with currentLevel: 0
   if (processedStation.currentLevel > 0) {
     processedStation.status = getStatusFromWaterLevel(
-      processedStation.currentLevel
+      processedStation.currentLevel,
     );
   }
   // Otherwise, keep the original status from the pinpoint mapping
@@ -396,7 +398,7 @@ const processStationWithRecharge = (station: Station): Station => {
 
   // Debug log
   console.log(
-    `Station ${processedStation.name}: Sy=${processedStation.specificYield}, Readings=${processedStation.recentReadings.length}, Calculated Recharge Events=${calculatedRecharge.length}`
+    `Station ${processedStation.name}: Sy=${processedStation.specificYield}, Readings=${processedStation.recentReadings.length}, Calculated Recharge Events=${calculatedRecharge.length}`,
   );
 
   // If we have calculated recharge events, use them; otherwise keep existing data
@@ -407,7 +409,7 @@ const processStationWithRecharge = (station: Station): Station => {
     }));
     console.log(
       `Station ${processedStation.name} recharge data:`,
-      processedStation.rechargeData
+      processedStation.rechargeData,
     );
   } else if (processedStation.rechargeData.length === 0) {
     // Fallback: create minimal recharge data for display
@@ -465,15 +467,31 @@ interface StationsContextType {
   getStationReadings: (
     latitude: number,
     longitude: number,
-    timeframe: "6m" | "1y" | "2y"
+    timeframe: "6m" | "1y" | "2y",
   ) => Promise<DatabaseReading[]>;
   getAnalytics: () => {
     nearbyStationCount: number;
     avgWaterLevel: number;
+    waterLevelTrend: {
+      value: number;
+      isPositive: boolean;
+    };
     rechargeEvents: number;
+    rechargeEventsTrend: {
+      value: number;
+      isPositive: boolean;
+    };
     criticalStations: number;
+    criticalStationsTrend: {
+      value: number;
+      isPositive: boolean;
+    };
+    statewideChange: number;
+    lastSyncMinutes: number;
+    rechargePercentage: number;
+    supplyGap: number;
     nearbyStations: Station[];
-    regionalData: any
+    regionalData: any;
   };
   getStationHealthScore: (station: Station) => number;
   requestLocationPermission: () => Promise<void>;
@@ -481,7 +499,7 @@ interface StationsContextType {
 
 // Create context
 const StationsContext = createContext<StationsContextType | undefined>(
-  undefined
+  undefined,
 );
 
 // Custom hook to use context
@@ -506,7 +524,9 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isLoadingStations, setIsLoadingStations] = useState<boolean>(false);
   const [stationsError, setStationsError] = useState<string | null>(null);
-  const [mumbaiStationsFromDB, setMumbaiStationsFromDB] = useState<Station[]>([]);
+  const [mumbaiStationsFromDB, setMumbaiStationsFromDB] = useState<Station[]>(
+    [],
+  );
 
   // Map Supabase row to Station shape
   const getWeekNumber = (dateStr?: string): number | undefined => {
@@ -521,7 +541,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const mapRowToStation = (row: any): Station => {
     const waterLevel = Number(
-      row.water_level ?? row.waterlevel ?? row.Water_Level_m ?? 0
+      row.water_level ?? row.waterlevel ?? row.Water_Level_m ?? 0,
     );
 
     // Determine status based on water level ranges
@@ -535,18 +555,19 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Debug log for status assignment
     console.log(
-      `Station mapping: ${row.name ?? row.station_id ?? row.Area_Name ?? "Unknown"
-      } - Water Level: ${waterLevel}m - Status: ${status}`
+      `Station mapping: ${
+        row.name ?? row.station_id ?? row.Area_Name ?? "Unknown"
+      } - Water Level: ${waterLevel}m - Status: ${status}`,
     );
 
     return {
       id: String(
         row.id ??
-        row.station_id ??
-        row.Station_ID ??
-        row.P_Key ??
-        row.pkey ??
-        row.P_Key
+          row.station_id ??
+          row.Station_ID ??
+          row.P_Key ??
+          row.pkey ??
+          row.P_Key,
       ),
       name: (row.name ??
         row.station_id ??
@@ -562,7 +583,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       signalStrength: 100,
       availabilityIndex: 1,
       lastUpdated:
-        row.date ?? row.Date
+        (row.date ?? row.Date)
           ? new Date(row.date ?? row.Date).toISOString()
           : new Date().toISOString(),
       aquiferType: row.aquifer_type ?? "Alluvial",
@@ -588,11 +609,11 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       recentReadings: [
         {
           timestamp:
-            row.date ?? row.Date
+            (row.date ?? row.Date)
               ? new Date(row.date ?? row.Date).toISOString()
               : new Date().toISOString(),
           level: Number(
-            row.water_level ?? row.waterlevel ?? row.Water_Level_m ?? 0
+            row.water_level ?? row.waterlevel ?? row.Water_Level_m ?? 0,
           ),
           temperature: Number(row.temperature ?? row.Temperature_C ?? 0),
         },
@@ -617,14 +638,15 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Debug log for pinpoint status assignment
     console.log(
-      `Pinpoint mapping: ${row.Area_Name ?? "Unknown"
-      } - DWLR_Status: '${dwlrStatus}' - Status: ${status}`
+      `Pinpoint mapping: ${
+        row.Area_Name ?? "Unknown"
+      } - DWLR_Status: '${dwlrStatus}' - Status: ${status}`,
     );
 
     return {
       id: String(row.Serial_No ?? row.id ?? row.P_Key ?? Math.random()),
       name: String(
-        row.Area_Name ?? row.name ?? `Station ${row.Serial_No ?? row.id ?? ""}`
+        row.Area_Name ?? row.name ?? `Station ${row.Serial_No ?? row.id ?? ""}`,
       ),
       district: "",
       state: "",
@@ -649,186 +671,243 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   // Fetch stations from Supabase using st_map_data table
-  const fetchStations = useCallback(async (userLat?: number, userLon?: number) => {
-    console.log("fetchStations called - attempting to fetch from st_map_data");
-    console.log("User location:", userLat, userLon);
-
-    // Check if supabase is configured
-    console.log("Supabase client available:", !!supabase);
-
-    try {
-      setIsLoadingStations(true);
-      setStationsError(null);
-
-      // Test basic connection first
-      console.log("Testing Supabase connection...");
-      const { data: testData, error: testError } = await supabase
-        .from("st_map_data")
-        .select("count", { count: "exact", head: true });
-
-      if (testError) {
-        console.log("Connection test failed:", testError);
-        throw testError;
-      }
-
-      console.log("Connection successful, total rows:", testData);
-
-      // Fetch station data from st_map_data table
-      console.log("Fetching actual data from st_map_data...");
-
-      // Get all stations - fetch all columns to see what's available
-      const { data: allStationData, error: stationErr } = await supabase
-        .from("st_map_data")
-        .select("*"); // Select all columns
-
-      if (stationErr) {
-        console.log("Fetch error:", stationErr);
-        throw stationErr;
-      }
-
-      console.log("Raw st_map_data from Supabase:", allStationData?.length || 0, "records");
-      console.log("First row example (all columns):", allStationData?.[0]);
-
-      // Log all available column names
-      if (allStationData && allStationData.length > 0) {
-        console.log("Available columns:", Object.keys(allStationData[0]));
-      }
-
-      // Filter out stations with invalid coordinates
-      let stationsArray = (allStationData ?? []).filter((row: any) => {
-        const lat = Number(row.Latitude);
-        const lon = Number(row.Longitude);
-        return Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0 && lon !== 0;
-      });
-
-      console.log(`Found ${stationsArray.length} valid stations with coordinates`);
-
-      if (userLat !== undefined && userLon !== undefined) {
-        // Calculate distance for each station
-        stationsArray = stationsArray.map((row: any) => ({
-          ...row,
-          distance: calculateDistance(
-            userLat,
-            userLon,
-            Number(row.Latitude),
-            Number(row.Longitude)
-          ),
-        }));
-
-        // Sort by distance (nearest first) but show ALL stations on map
-        stationsArray.sort((a: any, b: any) => a.distance - b.distance);
-        console.log(`Showing all ${stationsArray.length} stations sorted by distance`);
-      } else {
-        // No user location, show all stations
-        console.log(`Showing all ${stationsArray.length} stations`);
-      }
-
-      // Map st_map_data rows to Station objects
-      const mappedStations: Station[] = stationsArray.map((row: any) => {
-        const lat = Number(row.Latitude);
-        const lon = Number(row.Longitude);
-        const level = Number(row.water_level ?? 0);
-        const dateStr = new Date().toISOString();
-
-        // NEW CLASSIFICATION LOGIC:
-        // Safe: < 2.5 M
-        // Semi-critical: 2.5 M to 5 M
-        // Critical: > 5 M
-        let status: Station["status"] = "normal";
-        if (level > 5) {
-          status = "critical";
-        } else if (level >= 2.5 && level <= 5) {
-          status = "warning"; // Semi-critical maps to "warning"
-        } else {
-          status = "normal"; // Safe maps to "normal"
-        }
-
-        // Build station name from available fields
-        // Use st_code as primary identifier, and full_address_generated for name
-        const stationCode = row.st_code || row.station_code || "";
-        const address = row.full_address_generated || row.address || "";
-        
-        let stationName = address || row.name || row.station_name || stationCode || "DWLR Station";
-        
-        // Add station code to name if available
-        if (stationCode && !stationName.includes(stationCode)) {
-          stationName = `${stationName} (${stationCode})`;
-        }
-        
-        // Get station ID - use st_code as primary ID
-        const stationId = stationCode || row.id || row.station_id || Math.random().toString();
-
-        const district = row.district || "";
-        const state = row.state || "";
-
-        console.log(`Mapped station: ${stationId} -> ${stationName} (Lat: ${lat}, Lon: ${lon}, Water Level: ${level}m, Status: ${status})`);
-
-        return {
-          id: String(stationId),
-          name: stationName,
-          district: district,
-          state: state,
-          latitude: Number.isFinite(lat) ? lat : 0,
-          longitude: Number.isFinite(lon) ? lon : 0,
-          currentLevel: Number.isFinite(level) ? level : 0,
-          status: status,
-          batteryLevel: 75 + Math.random() * 25, // Random 75-100%
-          signalStrength: 60 + Math.random() * 40, // Random 60-100%
-          availabilityIndex: 0.7 + Math.random() * 0.3, // Random 0.7-1.0
-          lastUpdated: dateStr,
-          aquiferType: "Alluvial",
-          specificYield: 0.15,
-          installationDate: new Date().toISOString().slice(0, 10),
-          depth: 30 + Math.random() * 90, // Random 30-120m
-          oxygenLevel: undefined,
-          temperature: 24 + Math.random() * 6, // Random 24-30°C
-          week: undefined,
-          recentReadings: [
-            {
-              timestamp: dateStr,
-              level: Number.isFinite(level) ? level : 0,
-              temperature: 24 + Math.random() * 6,
-            },
-          ],
-          rechargeData: [],
-        };
-      });
-
-
+  const fetchStations = useCallback(
+    async (userLat?: number, userLon?: number) => {
       console.log(
-        "st_map_data rows:",
-        allStationData?.length ?? 0,
-        "mapped(valid):",
-        mappedStations.length
+        "fetchStations called - attempting to fetch from st_map_data",
       );
+      console.log("User location:", userLat, userLon);
 
-      if (mappedStations.length === 0) {
-        console.log("No valid stations found, using mock data instead");
+      // Check if supabase is configured
+      console.log("Supabase client available:", !!supabase);
+
+      try {
+        setIsLoadingStations(true);
+        setStationsError(null);
+
+        // Test basic connection first
+        console.log("Testing Supabase connection...");
+        const { data: testData, error: testError } = await supabase
+          .from("st_map_data")
+          .select("count", { count: "exact", head: true });
+
+        if (testError) {
+          console.log("Connection test failed:", testError);
+          throw testError;
+        }
+
+        console.log("Connection successful, total rows:", testData);
+
+        // Fetch station data from st_map_data table
+        console.log("Fetching actual data from st_map_data...");
+
+        // Get all stations - fetch all columns to see what's available
+        const { data: allStationData, error: stationErr } = await supabase
+          .from("st_map_data")
+          .select("*"); // Select all columns
+
+        if (stationErr) {
+          console.log("Fetch error:", stationErr);
+          throw stationErr;
+        }
+
+        console.log(
+          "Raw st_map_data from Supabase:",
+          allStationData?.length || 0,
+          "records",
+        );
+        console.log("First row example (all columns):", allStationData?.[0]);
+
+        // Log all available column names
+        if (allStationData && allStationData.length > 0) {
+          console.log("Available columns:", Object.keys(allStationData[0]));
+        }
+
+        // Filter out stations with invalid coordinates
+        let stationsArray = (allStationData ?? []).filter((row: any) => {
+          const lat = Number(row.Latitude);
+          const lon = Number(row.Longitude);
+          return (
+            Number.isFinite(lat) &&
+            Number.isFinite(lon) &&
+            lat !== 0 &&
+            lon !== 0
+          );
+        });
+
+        console.log(
+          `Found ${stationsArray.length} valid stations with coordinates`,
+        );
+
+        if (userLat !== undefined && userLon !== undefined) {
+          // Calculate distance for each station
+          stationsArray = stationsArray.map((row: any) => ({
+            ...row,
+            distance: calculateDistance(
+              userLat,
+              userLon,
+              Number(row.Latitude),
+              Number(row.Longitude),
+            ),
+          }));
+
+          // Sort by distance (nearest first) but show ALL stations on map
+          stationsArray.sort((a: any, b: any) => a.distance - b.distance);
+          console.log(
+            `Showing all ${stationsArray.length} stations sorted by distance`,
+          );
+        } else {
+          // No user location, show all stations
+          console.log(`Showing all ${stationsArray.length} stations`);
+        }
+
+        // Map st_map_data rows to Station objects
+        const mappedStations: Station[] = stationsArray.map((row: any) => {
+          const lat = Number(row.Latitude);
+          const lon = Number(row.Longitude);
+          const level = Number(row.water_level ?? 0);
+          const dateStr = new Date().toISOString();
+
+          // NEW CLASSIFICATION LOGIC:
+          // Safe: < 2.5 M
+          // Semi-critical: 2.5 M to 5 M
+          // Critical: > 5 M
+          let status: Station["status"] = "normal";
+          if (level > 5) {
+            status = "critical";
+          } else if (level >= 2.5 && level <= 5) {
+            status = "warning"; // Semi-critical maps to "warning"
+          } else {
+            status = "normal"; // Safe maps to "normal"
+          }
+
+          // Build station name from available fields
+          // Use WLCODE as primary identifier, and full_address_generated for name
+          const stationCode =
+            row.WLCODE || row.st_code || row.station_code || "";
+          const address = row.full_address_generated || row.address || "";
+
+          let stationName =
+            address ||
+            row.name ||
+            row.station_name ||
+            row.Area_Name ||
+            stationCode ||
+            "DWLR Station";
+
+          // Get station ID - use WLCODE as primary ID
+          const stationId =
+            stationCode ||
+            row.id ||
+            row.station_id ||
+            `STATION_${Math.random().toString().slice(2, 10)}`;
+
+          const district = row.district || "";
+          const state = row.state || "";
+
+          console.log(
+            `Mapped station: ${stationId} -> ${stationName} (Lat: ${lat}, Lon: ${lon}, Water Level: ${level}m, Status: ${status})`,
+          );
+
+          return {
+            id: String(stationId),
+            name: stationName,
+            district: district,
+            state: state,
+            latitude: Number.isFinite(lat) ? lat : 0,
+            longitude: Number.isFinite(lon) ? lon : 0,
+            currentLevel: Number.isFinite(level) ? level : 0,
+            status: status,
+            batteryLevel: 75 + Math.random() * 25, // Random 75-100%
+            signalStrength: 60 + Math.random() * 40, // Random 60-100%
+            availabilityIndex: 0.7 + Math.random() * 0.3, // Random 0.7-1.0
+            lastUpdated: dateStr,
+            aquiferType: "Alluvial",
+            specificYield: 0.15,
+            installationDate: new Date().toISOString().slice(0, 10),
+            depth: 30 + Math.random() * 90, // Random 30-120m
+            oxygenLevel: undefined,
+            temperature: 24 + Math.random() * 6, // Random 24-30°C
+            week: undefined,
+            recentReadings: [
+              {
+                timestamp: dateStr,
+                level: Number.isFinite(level) ? level : 0,
+                temperature: 24 + Math.random() * 6,
+              },
+            ],
+            rechargeData: [],
+          };
+        });
+
+        console.log(
+          "st_map_data rows:",
+          allStationData?.length ?? 0,
+          "mapped(valid):",
+          mappedStations.length,
+        );
+
+        if (mappedStations.length === 0) {
+          console.log("No valid stations found, using mock data instead");
+          const processedMockStations = mockStations
+            .slice(0, 10)
+            .map(processStationWithRecharge);
+          setStations(processedMockStations);
+        } else {
+          // If we have user location, calculate distances and keep only nearest 10
+          let finalStations = mappedStations;
+
+          if (userLat !== undefined && userLon !== undefined) {
+            const stationsWithDistance = mappedStations.map((station) => ({
+              ...station,
+              distance: calculateDistance(
+                userLat,
+                userLon,
+                station.latitude,
+                station.longitude,
+              ),
+            }));
+
+            // Sort by distance and take nearest 10
+            finalStations = stationsWithDistance
+              .sort((a, b) => a.distance - b.distance)
+              .slice(0, 10);
+
+            console.log(
+              `📍 Filtered to 10 nearest stations from user location [${userLat}, ${userLon}]`,
+            );
+            finalStations.forEach((s, i) => {
+              console.log(`  ${i + 1}. ${s.name} - ${s.distance.toFixed(2)}km`);
+            });
+          } else {
+            // No user location, just take first 10
+            finalStations = mappedStations.slice(0, 10);
+            console.log(`📍 No user location, taking first 10 stations`);
+          }
+
+          const processedStations = finalStations.map(
+            processStationWithRecharge,
+          );
+          setStations(processedStations);
+          console.log(
+            `Successfully loaded ${processedStations.length} stations`,
+          );
+        }
+      } catch (err: any) {
+        console.log("Supabase fetch error:", err);
+        setStationsError(err?.message || "Failed to load stations");
+        // Fallback to mock stations if database fails
+        console.log("Falling back to mock stations");
         const processedMockStations = mockStations
           .slice(0, 10)
           .map(processStationWithRecharge);
         setStations(processedMockStations);
-      } else {
-        const processedStations = mappedStations.map(
-          processStationWithRecharge
-        );
-        setStations(processedStations);
-        console.log(`Successfully loaded ${processedStations.length} stations`);
+      } finally {
+        setIsLoadingStations(false);
       }
-    } catch (err: any) {
-      console.log("Supabase fetch error:", err);
-      setStationsError(err?.message || "Failed to load stations");
-      // Fallback to mock stations if database fails
-      console.log("Falling back to mock stations");
-      const processedMockStations = mockStations
-        .slice(0, 10)
-        .map(processStationWithRecharge);
-      setStations(processedMockStations);
-    } finally {
-      setIsLoadingStations(false);
-    }
-  }, []);
-
+    },
+    [],
+  );
 
   // Request location permission and get current location
   const requestLocationPermission = useCallback(async () => {
@@ -859,7 +938,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             setLocationError("Failed to get location: " + error.message);
             setIsLoadingLocation(false);
           },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 },
         );
         return;
       }
@@ -909,7 +988,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
   const fetchMumbaiStationsFromDB = useCallback(async () => {
     try {
       console.log("Fetching Mumbai stations from district_data...");
-      
+
       // First, get station names from st_map_data
       const { data: stationNamesData, error: namesError } = await supabase
         .from("st_map_data")
@@ -1000,26 +1079,37 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       });
 
       const fetchedStations = (await Promise.all(stationsPromises)).filter(
-        (s): s is Station => s !== null
+        (s): s is Station => s !== null,
       );
 
       // Process stations with recharge data for consistency
       const processedStations = fetchedStations.map(processStationWithRecharge);
 
-      console.log(`✅✅✅ Fetched ${processedStations.length} Mumbai stations from database:`, 
-        processedStations.map(s => ({ wlcode: s.id, name: s.name, lat: s.latitude, lon: s.longitude, level: s.currentLevel }))
+      console.log(
+        `✅✅✅ Fetched ${processedStations.length} Mumbai stations from database:`,
+        processedStations.map((s) => ({
+          wlcode: s.id,
+          name: s.name,
+          lat: s.latitude,
+          lon: s.longitude,
+          level: s.currentLevel,
+        })),
       );
-      
+
       // Set state and log
       setMumbaiStationsFromDB(processedStations);
-      console.log(`✅✅✅ State updated with ${processedStations.length} Mumbai stations`);
+      console.log(
+        `✅✅✅ State updated with ${processedStations.length} Mumbai stations`,
+      );
       console.log(`✅✅✅ These stations will now appear in nearbyStations`);
-      
+
       // Force a re-render by logging the state
       setTimeout(() => {
-        console.log(`✅✅✅ After state update, mumbaiStationsFromDB should have ${processedStations.length} stations`);
+        console.log(
+          `✅✅✅ After state update, mumbaiStationsFromDB should have ${processedStations.length} stations`,
+        );
       }, 100);
-      
+
       return processedStations;
     } catch (error) {
       console.error("Error fetching Mumbai stations:", error);
@@ -1035,8 +1125,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Mahim DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0400,
-      longitude: 72.8400,
+      latitude: 19.04,
+      longitude: 72.84,
       currentLevel: 8.5,
       status: "normal",
       batteryLevel: 95,
@@ -1057,8 +1147,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Bandra DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0600,
-      longitude: 72.8300,
+      latitude: 19.06,
+      longitude: 72.83,
       currentLevel: 9.2,
       status: "normal",
       batteryLevel: 88,
@@ -1079,13 +1169,13 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Worli DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0200,
-      longitude: 72.8200,
+      latitude: 19.02,
+      longitude: 72.82,
       currentLevel: 7.8,
       status: "normal",
       batteryLevel: 92,
       signalStrength: 88,
-      availabilityIndex: 0.90,
+      availabilityIndex: 0.9,
       lastUpdated: new Date().toISOString(),
       aquiferType: "Alluvial",
       specificYield: 0.15,
@@ -1101,8 +1191,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Dadar DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0180,
-      longitude: 72.8450,
+      latitude: 19.018,
+      longitude: 72.845,
       currentLevel: 8.9,
       status: "normal",
       batteryLevel: 90,
@@ -1123,8 +1213,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Prabhadevi DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0150,
-      longitude: 72.8350,
+      latitude: 19.015,
+      longitude: 72.835,
       currentLevel: 9.5,
       status: "normal",
       batteryLevel: 93,
@@ -1145,8 +1235,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       name: "Matunga DWLR Station",
       district: "Mumbai",
       state: "Maharashtra",
-      latitude: 19.0300,
-      longitude: 72.8500,
+      latitude: 19.03,
+      longitude: 72.85,
       currentLevel: 8.2,
       status: "normal",
       batteryLevel: 87,
@@ -1173,14 +1263,21 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
   // Fetch Mumbai stations IMMEDIATELY on mount - ALWAYS
   useEffect(() => {
     // ALWAYS fetch Mumbai stations on mount - no conditions
-    console.log("📍📍📍 ALWAYS Fetching Mumbai stations from database on mount...");
+    console.log(
+      "📍📍📍 ALWAYS Fetching Mumbai stations from database on mount...",
+    );
     console.log("📍📍📍 Looking for WLCODEs:", MUMBAI_STATION_WLCODES);
-    
+
     const fetchStations = async () => {
       try {
         const result = await fetchMumbaiStationsFromDB();
-        console.log(`📍📍📍 Fetch complete: ${result.length} Mumbai stations fetched`);
-        console.log(`📍📍📍 Station IDs:`, result.map(s => s.id));
+        console.log(
+          `📍📍📍 Fetch complete: ${result.length} Mumbai stations fetched`,
+        );
+        console.log(
+          `📍📍📍 Station IDs:`,
+          result.map((s) => s.id),
+        );
       } catch (error) {
         console.error("📍📍📍 ERROR fetching Mumbai stations:", error);
       }
@@ -1188,40 +1285,65 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchStations();
   }, [fetchMumbaiStationsFromDB]);
 
-  // Get nearby stations - ALWAYS return Mumbai stations when available
+  // Get 10 nearest stations based on user location
   const nearbyStations = useMemo(() => {
-    console.log("🔄 Calculating nearby stations...", {
+    console.log("🔄 Calculating 10 nearest stations...", {
       hasUserLocation: !!userLocation,
-      mumbaiStationsCount: mumbaiStationsFromDB.length,
-      userLocation: userLocation ? { lat: userLocation.latitude, lon: userLocation.longitude } : null,
+      totalStations: stations.length,
+      userLocation: userLocation
+        ? { lat: userLocation.latitude, lon: userLocation.longitude }
+        : null,
     });
 
-    // PRIORITY 1: ALWAYS show Mumbai stations from database if we have them
+    // If we have user location, calculate actual distances and sort
+    if (userLocation && stations.length > 0) {
+      // Calculate distance for each station
+      const stationsWithDistance = stations.map((station) => {
+        const distance = calculateDistance(
+          userLocation.latitude,
+          userLocation.longitude,
+          station.latitude,
+          station.longitude,
+        );
+        return {
+          ...station,
+          distance: parseFloat(distance.toFixed(2)), // Store calculated distance
+        };
+      });
+
+      // Sort by distance (nearest first) and take top 10
+      const nearestStations = stationsWithDistance
+        .sort((a, b) => a.distance - b.distance)
+        .slice(0, 10);
+
+      console.log(`📍✅ RETURNING 10 nearest stations based on distance:`);
+      nearestStations.forEach((s, i) => {
+        console.log(
+          `  ${i + 1}. ${s.name} (${s.id}) - ${s.distance}km - Coords: [${s.latitude.toFixed(4)}, ${s.longitude.toFixed(4)}]`,
+        );
+      });
+
+      return nearestStations;
+    }
+
+    // FALLBACK: If no user location, prioritize Mumbai stations from database
     if (mumbaiStationsFromDB.length > 0) {
-      // Maintain the exact order of WLCODEs: W06968, W06969, W17200, W17199, W17201, W17202, W06759, W06745, W06752, W06744
       const orderedStations = MUMBAI_STATION_WLCODES.map((wlcode) => {
         const found = mumbaiStationsFromDB.find((s) => s.id === wlcode);
-        if (!found) {
-          console.warn(`⚠️ Station ${wlcode} not found in fetched stations`);
-        }
         return found;
       }).filter((s): s is Station => s !== undefined);
 
       if (orderedStations.length > 0) {
-        console.log(`📍✅ RETURNING ${orderedStations.length} Mumbai stations from database:`, {
-          stations: orderedStations.map((s) => ({ wlcode: s.id, name: s.name, level: s.currentLevel })),
-        });
-        // Return exactly these stations - NO FALLTHROUGH
+        console.log(
+          `📍 No user location - using ${orderedStations.length} Mumbai stations as fallback`,
+        );
         return orderedStations.slice(0, 10);
       }
     }
 
-    // PRIORITY 2: If no DB stations yet, use hardcoded Mumbai fallback stations
+    // FINAL FALLBACK: Use hardcoded Mumbai stations
     console.log("📍 Using hardcoded Mumbai fallback stations");
     return mumbaiStationsNearMahim.slice(0, 10);
-    
-    // NOTE: We NEVER fall through to regular station calculation
-    // Mumbai stations are ALWAYS shown when user is in Mumbai area
   }, [stations, userLocation, mumbaiStationsFromDB]);
 
   // Generate location-based alerts
@@ -1235,14 +1357,14 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       // If no location, use first few stations for demo alerts
       const stationsToAnalyze = location
         ? stations.filter((station) => {
-          const distance = calculateDistance(
-            location.latitude,
-            location.longitude,
-            station.latitude,
-            station.longitude
-          );
-          return distance <= 50; // Within 50km
-        })
+            const distance = calculateDistance(
+              location.latitude,
+              location.longitude,
+              station.latitude,
+              station.longitude,
+            );
+            return distance <= 50; // Within 50km
+          })
         : stations.slice(0, 4); // Use first 4 stations if no location
 
       stationsToAnalyze.forEach((station, index) => {
@@ -1252,7 +1374,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             location.latitude,
             location.longitude,
             station.latitude,
-            station.longitude
+            station.longitude,
           );
         }
 
@@ -1270,7 +1392,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             title: "High Water Level Alert",
             message: `Water level at ${station.name} is ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
-              now.getTime() - Math.random() * 2 * 60 * 60 * 1000
+              now.getTime() - Math.random() * 2 * 60 * 60 * 1000,
             ).toISOString(),
             isRead: false,
           });
@@ -1283,7 +1405,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             title: "Moderate Water Level",
             message: `Water level declining at ${station.name}: ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
-              now.getTime() - Math.random() * 4 * 60 * 60 * 1000
+              now.getTime() - Math.random() * 4 * 60 * 60 * 1000,
             ).toISOString(),
             isRead: false,
           });
@@ -1296,7 +1418,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             title: "Good Recharge Detected",
             message: `Positive recharge at ${station.name}: ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
-              now.getTime() - Math.random() * 6 * 60 * 60 * 1000
+              now.getTime() - Math.random() * 6 * 60 * 60 * 1000,
             ).toISOString(),
             isRead: false,
           });
@@ -1306,7 +1428,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       // Limit to avoid overwhelming user
       return alerts.slice(0, 8);
     },
-    []
+    [],
   );
 
   // Generate dynamic alerts when nearby stations or location changes
@@ -1322,7 +1444,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       (s) =>
         Number.isFinite(s.currentLevel) &&
         Number.isFinite(s.latitude) &&
-        Number.isFinite(s.longitude)
+        Number.isFinite(s.longitude),
     );
     if (candidates.length === 0) return null;
 
@@ -1333,7 +1455,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
         userLocation.latitude,
         userLocation.longitude,
         s.latitude,
-        s.longitude
+        s.longitude,
       ),
     }));
 
@@ -1379,7 +1501,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     (id: string) => {
       return stations.find((station) => station.id === id);
     },
-    [stations]
+    [stations],
   );
 
   // Fetch water level readings for a specific station from district_data table
@@ -1387,31 +1509,41 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     async (
       latitude: number,
       longitude: number,
-      timeframe: "6m" | "1y" | "2y"
+      timeframe: "6m" | "1y" | "2y",
     ): Promise<DatabaseReading[]> => {
       try {
+        // First, find the station WLCODE using coordinates
+        const station = stations.find(
+          (s) =>
+            Math.abs(s.latitude - latitude) < 0.001 &&
+            Math.abs(s.longitude - longitude) < 0.001,
+        );
+
+        if (!station) {
+          console.log(
+            `No station found at coordinates ${latitude}, ${longitude}`,
+          );
+          return [];
+        }
+
         console.log(
-          `Fetching readings for station at ${latitude}, ${longitude} with timeframe ${timeframe}`
+          `Fetching readings for station ${station.id} (${station.name}) with timeframe ${timeframe}`,
         );
 
         // Determine how many readings to fetch based on timeframe
         const readingCounts = {
           "6m": 12,
           "1y": 24,
-          "2y": 48,
+          "2y": 65,
         };
         const limit = readingCounts[timeframe];
 
-        // Query district_data table with tolerance for LAT/LON matching
-        const tolerance = 0.001; // Small tolerance for coordinate matching
+        // Query district_data table by WLCODE, ordered by P_no DESC (most recent first)
         const { data, error } = await supabase
           .from("district_data")
-          .select("P_no, WLCODE, SITE_TYPE, LAT, LON, Water_Level")
-          .gte("LAT", latitude - tolerance)
-          .lte("LAT", latitude + tolerance)
-          .gte("LON", longitude - tolerance)
-          .lte("LON", longitude + tolerance)
-          .order("P_no", { ascending: true }) // Lower P_no = latest reading
+          .select("P_no, WLCODE, Date, Water_Level, Year, Month")
+          .eq("WLCODE", station.id)
+          .order("P_no", { ascending: false }) // Most recent first
           .limit(limit);
 
         if (error) {
@@ -1419,14 +1551,27 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
           return [];
         }
 
-        console.log(`Found ${data?.length || 0} readings for station`);
-        return (data as DatabaseReading[]) || [];
+        if (!data || data.length === 0) {
+          console.log(`No readings found for station ${station.id}`);
+          return [];
+        }
+
+        // Convert to DatabaseReading format and reverse to get chronological order
+        const readings = data.reverse().map((row) => ({
+          date: row.Date || `${row.Year}-${String(row.Month).padStart(2, "0")}`,
+          level: row.Water_Level || 0,
+        }));
+
+        console.log(
+          `Found ${readings.length} readings for station ${station.id}`,
+        );
+        return readings;
       } catch (err) {
         console.error("Error in getStationReadings:", err);
         return [];
       }
     },
-    []
+    [stations],
   );
 
   // Calculate groundwater health score (0-100) based on multiple factors
@@ -1445,7 +1590,8 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     // Factor 2: Trend analysis (30 points)
     if (station.recentReadings.length >= 2) {
       const oldest = station.recentReadings[0].level;
-      const newest = station.recentReadings[station.recentReadings.length - 1].level;
+      const newest =
+        station.recentReadings[station.recentReadings.length - 1].level;
       const trend = newest - oldest;
 
       if (trend > 0) {
@@ -1489,23 +1635,133 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     const avgWaterLevel =
       relevantStations.length > 0
         ? relevantStations.reduce(
-          (sum, station) => sum + station.currentLevel,
-          0
-        ) / relevantStations.length
+            (sum, station) => sum + station.currentLevel,
+            0,
+          ) / relevantStations.length
         : 0;
 
-    // Calculate recharge events from nearby stations (mock for now, can be enhanced)
+    // Calculate water level trend from recent readings (comparing first and last reading)
+    let waterLevelTrend = 0;
+    let waterLevelTrendPositive = false;
+    if (relevantStations.length > 0) {
+      const trendsData = relevantStations
+        .filter((s) => s.recentReadings.length >= 2)
+        .map((station) => {
+          const firstReading = station.recentReadings[0].level;
+          const lastReading =
+            station.recentReadings[station.recentReadings.length - 1].level;
+          return lastReading - firstReading;
+        });
+
+      if (trendsData.length > 0) {
+        waterLevelTrend = Math.abs(
+          trendsData.reduce((sum, trend) => sum + trend, 0) / trendsData.length,
+        );
+        waterLevelTrendPositive =
+          trendsData.reduce((sum, trend) => sum + trend, 0) > 0;
+      }
+    }
+
+    // Calculate recharge events from nearby stations
     const rechargeEvents = relevantStations.filter(
       (station) =>
         station.recentReadings.length > 1 &&
         station.recentReadings[station.recentReadings.length - 1].level >
-        station.recentReadings[0].level
+          station.recentReadings[0].level,
     ).length;
+
+    // Calculate recharge events trend (comparing current recharge rate to historical)
+    let rechargeEventsTrend = 0;
+    let rechargeEventsTrendPositive = true;
+    if (relevantStations.length > 0) {
+      const avgRechargeRate =
+        relevantStations
+          .filter((s) => s.rechargeData.length > 0)
+          .reduce((sum, station) => {
+            const avgAmount =
+              station.rechargeData.reduce((s, r) => s + r.amount, 0) /
+              station.rechargeData.length;
+            return sum + avgAmount;
+          }, 0) /
+        Math.max(
+          relevantStations.filter((s) => s.rechargeData.length > 0).length,
+          1,
+        );
+
+      rechargeEventsTrend = parseFloat((avgRechargeRate * 0.15).toFixed(1)); // 15% of avg recharge rate as trend indicator
+      rechargeEventsTrendPositive =
+        rechargeEvents >= relevantStations.length * 0.3; // Positive if >30% stations show recharge
+    }
 
     // Count critical stations from nearby stations
     const criticalStations = relevantStations.filter(
-      (station) => station.status === "critical"
+      (station) => station.status === "critical",
     ).length;
+
+    // Calculate critical stations trend
+    const warningStations = relevantStations.filter(
+      (station) => station.status === "warning",
+    ).length;
+    const criticalStationsTrend = parseFloat(
+      ((criticalStations / Math.max(relevantStations.length, 1)) * 100).toFixed(
+        1,
+      ),
+    );
+    const criticalStationsTrendPositive = criticalStations === 0;
+
+    // Calculate statewide change (average change across all nearby stations)
+    let statewideChange = 0;
+    if (relevantStations.length > 0) {
+      const changes = relevantStations
+        .filter((s) => s.recentReadings.length >= 2)
+        .map((station) => {
+          const firstReading = station.recentReadings[0].level;
+          const lastReading =
+            station.recentReadings[station.recentReadings.length - 1].level;
+          return lastReading - firstReading;
+        });
+
+      if (changes.length > 0) {
+        statewideChange = parseFloat(
+          (
+            changes.reduce((sum, change) => sum + change, 0) / changes.length
+          ).toFixed(2),
+        );
+      }
+    }
+
+    // Calculate last sync time from most recent station update
+    let lastSyncMinutes = 0;
+    if (relevantStations.length > 0) {
+      const mostRecentUpdate = relevantStations.reduce((latest, station) => {
+        const stationTime = new Date(station.lastUpdated).getTime();
+        return stationTime > latest ? stationTime : latest;
+      }, 0);
+
+      if (mostRecentUpdate > 0) {
+        lastSyncMinutes = Math.floor(
+          (Date.now() - mostRecentUpdate) / (1000 * 60),
+        );
+      }
+    }
+
+    // Calculate recharge percentage (stations showing positive trend)
+    const rechargePercentage =
+      relevantStations.length > 0
+        ? Math.round((rechargeEvents / relevantStations.length) * 100)
+        : 0;
+
+    // Calculate supply gap (simplified: based on critical vs normal stations)
+    const normalStations = relevantStations.filter(
+      (station) => station.status === "normal",
+    ).length;
+    const supplyGap =
+      relevantStations.length > 0
+        ? Math.round(
+            ((criticalStations + warningStations) / relevantStations.length) *
+              100,
+          )
+        : 0;
 
     const regionalData = [
       { state: "Pune", avgLevel: 16.2, status: "warning" as const },
@@ -1517,8 +1773,24 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     return {
       nearbyStationCount: relevantStations.length,
       avgWaterLevel,
+      waterLevelTrend: {
+        value: waterLevelTrend,
+        isPositive: waterLevelTrendPositive,
+      },
       rechargeEvents,
+      rechargeEventsTrend: {
+        value: rechargeEventsTrend,
+        isPositive: rechargeEventsTrendPositive,
+      },
       criticalStations,
+      criticalStationsTrend: {
+        value: criticalStationsTrend,
+        isPositive: criticalStationsTrendPositive,
+      },
+      statewideChange,
+      lastSyncMinutes,
+      rechargePercentage,
+      supplyGap,
       nearbyStations: relevantStations,
       regionalData,
     };
@@ -1558,7 +1830,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       getAnalytics,
       getStationHealthScore,
       requestLocationPermission,
-    ]
+    ],
   );
 
   return (
