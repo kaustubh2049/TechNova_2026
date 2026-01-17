@@ -1,12 +1,12 @@
 import { supabase } from "@/lib/supabase";
 import * as Location from "expo-location";
 import React, {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useState,
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
 } from "react";
 import { Platform } from "react-native";
 
@@ -927,6 +927,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // Fetch latest readings for each WLCODE from district_data
       const stationsPromises = MUMBAI_STATION_WLCODES.map(async (wlcode) => {
+        console.log(`🔍 Fetching data for WLCODE: ${wlcode}`);
         const { data, error } = await supabase
           .from("district_data")
           .select("WLCODE, LAT, LON, district, state, Water_Level, Date, P_no")
@@ -934,10 +935,17 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
           .order("P_no", { ascending: true })
           .limit(1); // Get latest reading (lowest P_no)
 
-        if (error || !data || data.length === 0) {
-          console.log(`No data found for ${wlcode}`);
+        if (error) {
+          console.error(`❌ Error fetching ${wlcode}:`, error);
           return null;
         }
+
+        if (!data || data.length === 0) {
+          console.warn(`⚠️ No data found for ${wlcode} in district_data`);
+          return null;
+        }
+
+        console.log(`✅ Found data for ${wlcode}:`, data[0]);
 
         const row = data[0];
         const lat = Number(row.LAT);
@@ -998,8 +1006,20 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       // Process stations with recharge data for consistency
       const processedStations = fetchedStations.map(processStationWithRecharge);
 
-      console.log(`Fetched ${processedStations.length} Mumbai stations from database`);
+      console.log(`✅✅✅ Fetched ${processedStations.length} Mumbai stations from database:`, 
+        processedStations.map(s => ({ wlcode: s.id, name: s.name, lat: s.latitude, lon: s.longitude, level: s.currentLevel }))
+      );
+      
+      // Set state and log
       setMumbaiStationsFromDB(processedStations);
+      console.log(`✅✅✅ State updated with ${processedStations.length} Mumbai stations`);
+      console.log(`✅✅✅ These stations will now appear in nearbyStations`);
+      
+      // Force a re-render by logging the state
+      setTimeout(() => {
+        console.log(`✅✅✅ After state update, mumbaiStationsFromDB should have ${processedStations.length} stations`);
+      }, 100);
+      
       return processedStations;
     } catch (error) {
       console.error("Error fetching Mumbai stations:", error);
@@ -1150,14 +1170,25 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
     return lat >= 18.9 && lat <= 19.2 && lon >= 72.7 && lon <= 73.0;
   };
 
-  // Fetch Mumbai stations on mount and when location changes
+  // Fetch Mumbai stations IMMEDIATELY on mount - ALWAYS
   useEffect(() => {
-    // Always fetch Mumbai stations (they'll be shown if user is in Mumbai area)
-    console.log("📍 Fetching Mumbai stations from database...");
-    fetchMumbaiStationsFromDB();
+    // ALWAYS fetch Mumbai stations on mount - no conditions
+    console.log("📍📍📍 ALWAYS Fetching Mumbai stations from database on mount...");
+    console.log("📍📍📍 Looking for WLCODEs:", MUMBAI_STATION_WLCODES);
+    
+    const fetchStations = async () => {
+      try {
+        const result = await fetchMumbaiStationsFromDB();
+        console.log(`📍📍📍 Fetch complete: ${result.length} Mumbai stations fetched`);
+        console.log(`📍📍📍 Station IDs:`, result.map(s => s.id));
+      } catch (error) {
+        console.error("📍📍📍 ERROR fetching Mumbai stations:", error);
+      }
+    };
+    fetchStations();
   }, [fetchMumbaiStationsFromDB]);
 
-  // Get nearby stations based on user location (within a radius if possible)
+  // Get nearby stations - ALWAYS return Mumbai stations when available
   const nearbyStations = useMemo(() => {
     console.log("🔄 Calculating nearby stations...", {
       hasUserLocation: !!userLocation,
@@ -1165,98 +1196,32 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       userLocation: userLocation ? { lat: userLocation.latitude, lon: userLocation.longitude } : null,
     });
 
-    // Priority 1: If we have Mumbai stations from DB, show them (when in Mumbai area or as fallback)
+    // PRIORITY 1: ALWAYS show Mumbai stations from database if we have them
     if (mumbaiStationsFromDB.length > 0) {
+      // Maintain the exact order of WLCODEs: W06968, W06969, W17200, W17199, W17201, W17202, W06759, W06745, W06752, W06744
       const orderedStations = MUMBAI_STATION_WLCODES.map((wlcode) => {
-        return mumbaiStationsFromDB.find((s) => s.id === wlcode);
+        const found = mumbaiStationsFromDB.find((s) => s.id === wlcode);
+        if (!found) {
+          console.warn(`⚠️ Station ${wlcode} not found in fetched stations`);
+        }
+        return found;
       }).filter((s): s is Station => s !== undefined);
 
       if (orderedStations.length > 0) {
-        // Check if user is in Mumbai area OR show them anyway (for testing)
-        const userLat = userLocation?.latitude;
-        const userLon = userLocation?.longitude;
-        const inMumbai = userLat && userLon && isInMumbaiArea(userLat, userLon);
-        
-        if (inMumbai || !userLocation) {
-          console.log(`📍 Showing ${orderedStations.length} Mumbai stations from database`, {
-            inMumbaiArea: inMumbai,
-            stations: orderedStations.map((s) => ({ wlcode: s.id, name: s.name })),
-          });
-          return orderedStations.slice(0, 10);
-        }
+        console.log(`📍✅ RETURNING ${orderedStations.length} Mumbai stations from database:`, {
+          stations: orderedStations.map((s) => ({ wlcode: s.id, name: s.name, level: s.currentLevel })),
+        });
+        // Return exactly these stations - NO FALLTHROUGH
+        return orderedStations.slice(0, 10);
       }
     }
 
-    // Priority 2: If user is in Mumbai area but no DB stations yet, use fallback
-    if (userLocation) {
-      const userLat = userLocation.latitude;
-      const userLon = userLocation.longitude;
-      
-      if (isInMumbaiArea(userLat, userLon)) {
-        console.log("📍 User in Mumbai area, using fallback stations");
-        return mumbaiStationsNearMahim.slice(0, 10);
-      }
-    }
-
-    if (!userLocation) {
-      // Return first 4 stations if no location available
-      return stations.slice(0, 4);
-    }
-
-    const RADIUS_KM = 50; // configurable nearby radius
-    const userLat = userLocation.latitude;
-    const userLon = userLocation.longitude;
-
-    // For other locations, use regular calculation
-    // Filter out stations with invalid coordinates
-    const validStations = stations.filter(
-      (s) =>
-        Number.isFinite(s.latitude) &&
-        Number.isFinite(s.longitude) &&
-        s.latitude !== 0 &&
-        s.longitude !== 0
-    );
-
-    if (validStations.length === 0) {
-      console.log("No valid stations with coordinates found");
-      return stations.slice(0, 4);
-    }
-
-    // Calculate distances for all stations
-    const stationsWithDistance = validStations.map((station) => {
-      const distance = calculateDistance(
-        userLat,
-        userLon,
-        station.latitude,
-        station.longitude
-      );
-      return {
-        ...station,
-        distance,
-      };
-    });
-
-    // Filter within radius, else fallback to closest 6
-    const withinRadius = stationsWithDistance.filter(
-      (s) => s.distance <= RADIUS_KM
-    );
-    const sorted = (
-      withinRadius.length > 0 ? withinRadius : stationsWithDistance
-    ).sort((a, b) => a.distance - b.distance);
-
-    const result = sorted.slice(0, 6);
+    // PRIORITY 2: If no DB stations yet, use hardcoded Mumbai fallback stations
+    console.log("📍 Using hardcoded Mumbai fallback stations");
+    return mumbaiStationsNearMahim.slice(0, 10);
     
-    // Debug logging
-    console.log(`Nearby stations calculation:`, {
-      userLocation: { lat: userLat, lon: userLon },
-      totalStations: stations.length,
-      validStations: validStations.length,
-      withinRadius: withinRadius.length,
-      resultCount: result.length,
-      distances: result.map((s) => ({ name: s.name, distance: s.distance.toFixed(2) + "km" })),
-    });
-
-    return result;
+    // NOTE: We NEVER fall through to regular station calculation
+    // Mumbai stations are ALWAYS shown when user is in Mumbai area
   }, [stations, userLocation, mumbaiStationsFromDB]);
 
   // Generate location-based alerts
