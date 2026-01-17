@@ -1,14 +1,15 @@
 import { GaugeChart } from "@/components/gauge-chart";
 import { useStations } from "@/providers/stations-provider";
+import { fetchStationAlerts, getAlertColor, getAlertIcon, GroundwaterAlert } from "@/services/alerts-service";
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, RefreshCw, Settings, Share2, TrendingDown } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Defs, LinearGradient, Path, Stop, Text as SvgText } from "react-native-svg";
@@ -19,6 +20,14 @@ function StationDetailContent() {
   const [selectedTab, setSelectedTab] = useState<
     "trends" | "recharge" | "forecast" | "metadata"
   >("forecast");
+  const [stationAlerts, setStationAlerts] = useState<GroundwaterAlert[]>([]);
+
+  // Fetch station-specific alerts from database
+  useEffect(() => {
+    if (id) {
+      fetchStationAlerts(id, 5).then(setStationAlerts);
+    }
+  }, [id]);
 
   console.log("=== Station Details Page ===");
   console.log("Station ID from params:", id);
@@ -157,22 +166,43 @@ function StationDetailContent() {
           </View>
         </View>
 
-        {/* Alert Banner */}
-        {(station.status === "warning" || station.status === "critical") && (
+        {/* Alert Banner - Shows database alerts OR status-based alerts */}
+        {(stationAlerts.length > 0 || station.status === "warning" || station.status === "critical") && (
           <View style={styles.alertContainer}>
-            <View style={[styles.alertBanner, { borderLeftColor: getStatusColor(station.status) }]}>
-              <View style={styles.alertIcon}>
-                <TrendingDown size={20} color={getStatusColor(station.status)} />
+            {stationAlerts.length > 0 ? (
+              // Show latest database alert
+              <View style={[styles.alertBanner, { borderLeftColor: getAlertColor(stationAlerts[0].severity) }]}>
+                <View style={styles.alertIcon}>
+                  <Text style={{ fontSize: 24 }}>{getAlertIcon(stationAlerts[0].alert_type)}</Text>
+                </View>
+                <View style={styles.alertContent}>
+                  <Text style={[styles.alertTitle, { color: getAlertColor(stationAlerts[0].severity) }]}>
+                    {stationAlerts[0].alert_type.replace(/_/g, ' ')}
+                  </Text>
+                  <Text style={styles.alertMessage}>
+                    {stationAlerts[0].message}
+                  </Text>
+                  <Text style={styles.alertTime}>
+                    {new Date(stationAlerts[0].triggered_at).toLocaleString()}
+                  </Text>
+                </View>
               </View>
-              <View style={styles.alertContent}>
-                <Text style={[styles.alertTitle, { color: getStatusColor(station.status) }]}>
-                  Rapid Decline Warning
-                </Text>
-                <Text style={styles.alertMessage}>
-                  Water level has dropped {Math.abs(station.currentLevel).toFixed(1)}m below seasonal norms. Predicted depletion risk in 45 days.
-                </Text>
+            ) : (
+              // Fallback to status-based alert
+              <View style={[styles.alertBanner, { borderLeftColor: getStatusColor(station.status) }]}>
+                <View style={styles.alertIcon}>
+                  <TrendingDown size={20} color={getStatusColor(station.status)} />
+                </View>
+                <View style={styles.alertContent}>
+                  <Text style={[styles.alertTitle, { color: getStatusColor(station.status) }]}>
+                    Rapid Decline Warning
+                  </Text>
+                  <Text style={styles.alertMessage}>
+                    Water level has dropped {Math.abs(station.currentLevel).toFixed(1)}m below seasonal norms. Predicted depletion risk in 45 days.
+                  </Text>
+                </View>
               </View>
-            </View>
+            )}
           </View>
         )}
 
@@ -491,6 +521,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     color: "#475569",
     fontWeight: "500",
+  },
+  alertTime: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#9CA3AF",
+    marginTop: 8,
   },
   tabsContainer: {
     backgroundColor: "rgba(255, 255, 255, 0.8)",

@@ -21,17 +21,11 @@ export async function fetchGroundwaterAlerts(
   onlyUnacknowledged: boolean = true
 ): Promise<GroundwaterAlert[]> {
   try {
-    let query = supabase
+    const { data, error } = await supabase
       .from("groundwater_alerts")
       .select("*")
       .order("triggered_at", { ascending: false })
       .limit(limit);
-
-    if (onlyUnacknowledged) {
-      query = query.eq("acknowledged", false);
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       console.error("Error fetching groundwater alerts:", error);
@@ -57,7 +51,6 @@ export async function fetchStationAlerts(
       .from("groundwater_alerts")
       .select("*")
       .eq("wlcode", wlcode)
-      .eq("acknowledged", false)
       .order("triggered_at", { ascending: false })
       .limit(limit);
 

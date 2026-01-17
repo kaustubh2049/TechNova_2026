@@ -1,38 +1,154 @@
 import { useStations } from "@/providers/stations-provider";
+import { fetchNearbyStationsWithReadings, NearbyStation } from "@/services/station-explorer-service";
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from "expo-router";
 import {
-  ArrowRight,
-  ChevronDown,
-  MapPin,
-  Search,
-  SlidersHorizontal,
-  TrendingDown,
-  TrendingUp
+    ArrowRight,
+    MapPin,
+    Navigation,
+    RefreshCw,
+    TrendingDown,
+    TrendingUp
 } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Dimensions,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const Y_AXIS_WIDTH = 40;  // Space for Y-axis labels
+const CHART_WIDTH = SCREEN_WIDTH - 100 - Y_AXIS_WIDTH;
+const CHART_HEIGHT = 100;
+
+type TimeRange = '6m' | '1y' | '2y';
 
 function StationExplorerContent() {
-  const { stations, getAnalytics } = useStations();
+  const { userLocation, isLoadingLocation, requestLocationPermission } = useStations();
   const insets = useSafeAreaInsets();
-  const [searchQuery, setSearchQuery] = useState("");
-  const analytics = getAnalytics();
+  const [stations, setStations] = useState<NearbyStation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useState<TimeRange>('1y');
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState<{ lat: number; lon: number } | null>(null);
 
-  // Sample station data with status
-  const stationData = stations.slice(0, 10).map((station, index) => ({
-    ...station,
-    status: index % 3 === 0 ? 'critical' : index % 3 === 1 ? 'safe' : 'warning',
-    value: `${(Math.random() * 50).toFixed(2)}`,
-    trend: index % 2 === 0 ? 'up' : 'down',
-    trendValue: `${(Math.random() * 2).toFixed(2)}`,
-  }));
+  // Request location on mount
+  useEffect(() => {
+    requestLocationPermission();
+  }, []);
+
+  // Fetch stations when location or time range changes
+  useEffect(() => {
+    loadStations();
+  }, [timeRange, userLocation]);
+
+  const loadStations = async () => {
+    setLoading(true);
+    
+    let lat: number;
+    let lon: number;
+    
+    if (userLocation && userLocation.latitude && userLocation.longitude) {
+      lat = userLocation.latitude;
+      lon = userLocation.longitude;
+      console.log(`📍 Using LIVE location: ${lat}, ${lon}`);
+    } else {
+      // Default to Mumbai if no location
+      lat = 19.076;
+      lon = 72.8777;
+      console.log(`📍 Using DEFAULT location (Mumbai): ${lat}, ${lon}`);
+    }
+    
+    setCurrentLocation({ lat, lon });
+    
+    const data = await fetchNearbyStationsWithReadings(lat, lon, 15, timeRange);
+    setStations(data);
+    setLoading(false);
+    setRefreshing(false);
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    requestLocationPermission(); // Re-request location
+    loadStations();
+  };
+
+  // Generate SVG path for line chart
+  // Helper to get consistent axis range
+  const getChartAxisData = (readings: { date: string; waterLevel: number }[]) => {
+    if (readings.length === 0) return { min: 0, max: 10, ticks: [5] };
+    const levels = readings.map(r => r.waterLevel);
+    const rawMin = Math.min(...levels);
+    const rawMax = Math.max(...levels);
+    const padding = (rawMax - rawMin) * 0.1 || 0.5;
+    
+    // Round for nicer labels
+    const min = Math.floor((rawMin - padding) * 10) / 10;
+    const max = Math.ceil((rawMax + padding) * 10) / 10;
+    const mid = (min + max) / 2;
+    
+    return { min, max, ticks: [max, mid, min] }; // Top to bottom order
+  };
+
+  // Generate SVG path for line chart
+  const generateChartPath = (readings: { date: string; waterLevel: number }[], min: number, max: number) => {
+    if (readings.length < 2) return '';
+    const range = max - min || 1;
+
+    const points = readings.map((reading, index) => {
+      // Shift x by Y_AXIS_WIDTH
+      const x = Y_AXIS_WIDTH + (index / (readings.length - 1)) * CHART_WIDTH;
+      // Invert y (SVG coords: 0 is top)
+      const y = ((max - reading.waterLevel) / range) * CHART_HEIGHT;
+      return { x, y };
+    });
+
+    return points.reduce((acc, point, index) => {
+      if (index === 0) return `M ${point.x} ${point.y}`;
+      return `${acc} L ${point.x} ${point.y}`;
+    }, '');
+  };
+
+  // Generate area fill path
+  const generateAreaPath = (readings: { date: string; waterLevel: number }[], min: number, max: number) => {
+    if (readings.length < 2) return '';
+    const linePath = generateChartPath(readings, min, max);
+    // Close the path at the bottom
+    return `${linePath} L ${Y_AXIS_WIDTH + CHART_WIDTH} ${CHART_HEIGHT} L ${Y_AXIS_WIDTH} ${CHART_HEIGHT} Z`;
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'safe': return '#79C9C5';
+      case 'warning': return '#F59E0B';
+      case 'critical': return '#F96E5B';
+      default: return '#9CA3AF';
+    }
+  };
+
+  const getTrend = (readings: { date: string; waterLevel: number }[]) => {
+    if (readings.length < 2) return { direction: 'up', value: 0 };
+    const first = readings[0].waterLevel;
+    const last = readings[readings.length - 1].waterLevel;
+    const change = ((last - first) / first) * 100;
+    return {
+      direction: change >= 0 ? 'up' : 'down',
+      value: Math.abs(change).toFixed(1)
+    };
+  };
+
+  const timeRangeLabels = {
+    '6m': '6 Months',
+    '1y': '1 Year',
+    '2y': '2 Years'
+  };
 
   return (
     <LinearGradient
@@ -48,129 +164,209 @@ function StationExplorerContent() {
             </View>
             <View>
               <Text style={styles.headerTitle}>Station Explorer</Text>
-              <Text style={styles.headerSubtitle}>GLOBAL NETWORK</Text>
+              <Text style={styles.headerSubtitle}>NEARBY STATIONS</Text>
             </View>
           </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.headerButton}>
-              <Search size={20} color="#64748b" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton}>
-              <SlidersHorizontal size={20} color="#64748b" />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={handleRefresh}
+          >
+            <RefreshCw size={20} color="#3F9AAE" />
+          </TouchableOpacity>
         </View>
 
-        {/* Filter Pills */}
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.filterScroll}
-          contentContainerStyle={styles.filterContent}
-        >
-          <TouchableOpacity style={styles.filterActive}>
-            <Text style={styles.filterActiveText}>All Regions</Text>
-            <ChevronDown size={14} color="#3F9AAE" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.filterPill}>
-            <Text style={styles.filterPillText}>Critical</Text>
-            <View style={[styles.statusDot, { backgroundColor: '#F96E5B' }]} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.filterPill}>
-            <Text style={styles.filterPillText}>Safe</Text>
-            <View style={[styles.statusDot, { backgroundColor: '#79C9C5' }]} />
-          </TouchableOpacity>
-        </ScrollView>
+        {/* Time Range Toggle */}
+        <View style={styles.timeRangeContainer}>
+          {(['6m', '1y', '2y'] as TimeRange[]).map((range) => (
+            <TouchableOpacity
+              key={range}
+              style={[
+                styles.timeRangeButton,
+                timeRange === range && styles.timeRangeButtonActive
+              ]}
+              onPress={() => setTimeRange(range)}
+            >
+              <Text style={[
+                styles.timeRangeText,
+                timeRange === range && styles.timeRangeTextActive
+              ]}>
+                {timeRangeLabels[range]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Distance Info */}
+        <View style={styles.distanceInfo}>
+          <Navigation size={14} color="#64748b" />
+          <Text style={styles.distanceText}>
+            Showing {stations.length} stations near you
+          </Text>
+        </View>
       </View>
 
-      {/* Station List */}
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
-      >
-        {stationData.map((station, index) => (
-          <View key={station.id} style={styles.stationCard}>
-            <View style={styles.cardHeader}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: station.status === 'critical' ? '#F96E5B' : 
-                                    station.status === 'safe' ? '#79C9C5' : '#FFE2AF' }
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    { color: station.status === 'warning' ? '#1A1A1A' : '#fff' }
-                  ]}>
-                    {station.status.toUpperCase()}
-                  </Text>
-                </View>
-                <Text style={styles.stationCode}>ST-{station.id}</Text>
-              </View>
-              <View style={styles.cardHeaderRight}>
-                <Text style={styles.stationValue}>{station.value}<Text style={styles.stationUnit}>m</Text></Text>
-                <View style={[
-                  styles.trendBadge,
-                  { backgroundColor: station.trend === 'up' ? '#79C9C5' : '#F96E5B' }
-                ]}>
-                  {station.trend === 'up' ? 
-                    <TrendingUp size={12} color="#fff" /> : 
-                    <TrendingDown size={12} color="#fff" />
-                  }
-                  <Text style={styles.trendText}>
-                    {station.trend === 'up' ? '+' : '-'}{station.trendValue}/mo
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <Text style={styles.stationName}>{station.name}</Text>
-            <View style={styles.locationRow}>
-              <MapPin size={12} color="#79C9C5" />
-              <Text style={styles.locationText}>{station.district}</Text>
-            </View>
-
-            {/* Sparkline */}
-            <View style={styles.sparklineContainer}>
-              <View style={styles.sparkline}>
-                {[30, 35, 40, 45, 55, 65, 75, 85, 90, 100].map((height, i) => (
-                  <View 
-                    key={i}
-                    style={[
-                      styles.sparklineBar,
-                      { 
-                        height: `${height}%`,
-                        backgroundColor: i >= 6 ? 
-                          (station.status === 'critical' ? 'rgba(249, 110, 91, 0.7)' : 'rgba(121, 201, 197, 0.7)') :
-                          'rgba(121, 201, 197, 0.4)'
+      {/* Loading State */}
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3F9AAE" />
+          <Text style={styles.loadingText}>Loading nearby stations...</Text>
+        </View>
+      ) : (
+        /* Station List */
+        <ScrollView 
+          style={styles.content}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 120 }}
+        >
+          {stations.map((station, index) => {
+            const trend = getTrend(station.readings);
+            const axisData = getChartAxisData(station.readings);
+            const statusColor = getStatusColor(station.status);
+            
+            return (
+              <TouchableOpacity 
+                key={station.wlcode} 
+                style={styles.stationCard}
+                onPress={() => router.push(`/station/${station.wlcode}`)}
+                activeOpacity={0.9}
+              >
+                {/* Card Header */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <View style={[
+                      styles.statusBadge,
+                      { backgroundColor: getStatusColor(station.status) }
+                    ]}>
+                      <Text style={[
+                        styles.statusText,
+                        { color: station.status === 'warning' ? '#1A1A1A' : '#fff' }
+                      ]}>
+                        {station.status.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.stationCode}>{station.wlcode}</Text>
+                    <View style={styles.distanceBadge}>
+                      <Text style={styles.distanceBadgeText}>{station.distance} km</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardHeaderRight}>
+                    <Text style={styles.stationValue}>
+                      {station.currentWaterLevel.toFixed(2)}
+                      <Text style={styles.stationUnit}>m</Text>
+                    </Text>
+                    <View style={[
+                      styles.trendBadge,
+                      { backgroundColor: trend.direction === 'up' ? '#F96E5B' : '#79C9C5' }
+                    ]}>
+                      {trend.direction === 'up' ? 
+                        <TrendingUp size={12} color="#fff" /> : 
+                        <TrendingDown size={12} color="#fff" />
                       }
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-
-            {/* Footer */}
-            <View style={styles.cardFooter}>
-              <View style={styles.analystsRow}>
-                <View style={styles.analysts}>
-                  <View style={[styles.analystAvatar, { backgroundColor: '#3F9AAE' }]}>
-                    <Text style={styles.analystInitial}>A</Text>
-                  </View>
-                  <View style={[styles.analystAvatar, { backgroundColor: '#79C9C5', marginLeft: -12 }]}>
-                    <Text style={styles.analystInitial}>B</Text>
+                      <Text style={styles.trendText}>
+                        {trend.direction === 'up' ? '+' : '-'}{trend.value}%
+                      </Text>
+                    </View>
                   </View>
                 </View>
-                <Text style={styles.analystsLabel}>Analyst Assigned</Text>
-              </View>
-              <TouchableOpacity style={styles.analysisButton}>
-                <Text style={styles.analysisButtonText}>Analysis</Text>
-                <ArrowRight size={16} color="#fff" />
+
+                <Text style={styles.stationName}>{station.name}</Text>
+                <View style={styles.locationRow}>
+                  <MapPin size={12} color="#79C9C5" />
+                  <Text style={styles.locationText}>{station.district}, {station.state}</Text>
+                </View>
+
+                {/* Water Level Chart */}
+                {/* Water Level Chart */}
+                <View style={styles.chartContainer}>
+                  <Text style={styles.chartTitle}>WATER LEVEL TREND (m)</Text>
+                  {station.readings.length >= 2 ? (
+                    <Svg width={SCREEN_WIDTH - 80} height={CHART_HEIGHT + 20}>
+                      {/* Y-Axis Lines & Labels */}
+                      {axisData.ticks.map((tick, i) => {
+                         const y = ((axisData.max - tick) / (axisData.max - axisData.min)) * CHART_HEIGHT;
+                         return (
+                           <React.Fragment key={i}>
+                             <SvgText
+                               x={Y_AXIS_WIDTH - 8}
+                               y={y + 4}
+                               fill="#9CA3AF"
+                               fontSize="9"
+                               fontWeight="600"
+                               textAnchor="end"
+                             >
+                               {tick.toFixed(1)}
+                             </SvgText>
+                             <Line
+                               x1={Y_AXIS_WIDTH}
+                               y1={y}
+                               x2={CHART_WIDTH + Y_AXIS_WIDTH}
+                               y2={y}
+                               stroke="#E5E7EB"
+                               strokeDasharray="4 4"
+                               strokeWidth="1"
+                             />
+                           </React.Fragment>
+                         );
+                      })}
+
+                      {/* Area fill */}
+                      <Path
+                        d={generateAreaPath(station.readings, axisData.min, axisData.max)}
+                        fill={`${statusColor}15`}
+                      />
+                      {/* Line */}
+                      <Path
+                        d={generateChartPath(station.readings, axisData.min, axisData.max)}
+                        stroke={statusColor}
+                        strokeWidth="2.5"
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      {/* End point */}
+                      {station.readings.length > 0 && (
+                        <Circle
+                          cx={Y_AXIS_WIDTH + CHART_WIDTH}
+                          cy={((axisData.max - station.readings[station.readings.length - 1].waterLevel) / (axisData.max - axisData.min)) * CHART_HEIGHT}
+                          r="5"
+                          fill={statusColor}
+                        />
+                      )}
+                    </Svg>
+                  ) : (
+                    <View style={styles.noDataContainer}>
+                      <Text style={styles.noDataText}>Insufficient data</Text>
+                    </View>
+                  )}
+                  
+                  {/* Chart Labels */}
+                  <View style={[styles.chartLabels, { paddingLeft: Y_AXIS_WIDTH }]}>
+                    <Text style={styles.chartLabel}>
+                      {timeRange === '6m' ? 'JUL 2025' : timeRange === '1y' ? 'JAN 2025' : 'APR 2023'}
+                    </Text>
+                    <Text style={styles.chartLabel}>NOW</Text>
+                  </View>
+                </View>
+
+                {/* Footer */}
+                <View style={styles.cardFooter}>
+                  <View style={styles.readingsInfo}>
+                    <Text style={styles.readingsCount}>{station.readings.length}</Text>
+                    <Text style={styles.readingsLabel}>data points</Text>
+                  </View>
+                  <TouchableOpacity 
+                    style={styles.analysisButton}
+                    onPress={() => router.push(`/station/${station.wlcode}`)}
+                  >
+                    <Text style={styles.analysisButtonText}>View Details</Text>
+                    <ArrowRight size={16} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </TouchableOpacity>
-            </View>
-          </View>
-        ))}
-      </ScrollView>
+            );
+          })}
+        </ScrollView>
+      )}
     </LinearGradient>
   );
 }
@@ -182,7 +378,7 @@ export default function StationExplorer() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFE2AF", // Sunset cream
+    backgroundColor: "#FFE2AF",
   },
   header: {
     paddingHorizontal: 24,
@@ -223,68 +419,58 @@ const styles = StyleSheet.create({
     color: "#64748b",
     letterSpacing: 1.5,
   },
-  headerRight: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#F9FAFB",
+  refreshButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(63, 154, 174, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
-  filterScroll: {
-    marginTop: 4,
-  },
-  filterContent: {
-    gap: 12,
-    paddingRight: 24,
-  },
-  filterActive: {
+  timeRangeContainer: {
     flexDirection: "row",
-    height: 32,
+    gap: 8,
+    marginBottom: 12,
+  },
+  timeRangeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+  },
+  timeRangeButtonActive: {
+    backgroundColor: "#3F9AAE",
+  },
+  timeRangeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748b",
+  },
+  timeRangeTextActive: {
+    color: "#fff",
+  },
+  distanceInfo: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#fff",
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
-  filterActiveText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#3F9AAE",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
+  distanceText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#64748b",
   },
-  filterPill: {
-    flexDirection: "row",
-    height: 32,
+  loadingContainer: {
+    flex: 1,
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "rgba(63, 154, 174, 0.4)",
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
   },
-  filterPillText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748b",
   },
   content: {
     flex: 1,
@@ -294,7 +480,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderRadius: 24,
     padding: 24,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
     borderColor: "rgba(121, 201, 197, 0.2)",
     shadowColor: "#000",
@@ -307,40 +493,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   cardHeaderLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
+    flexWrap: "wrap",
   },
   statusBadge: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: 10,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "800",
     letterSpacing: 0.8,
   },
   stationCode: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748b",
+    letterSpacing: 0.5,
+  },
+  distanceBadge: {
+    backgroundColor: "rgba(63, 154, 174, 0.1)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  distanceBadgeText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "#9CA3AF",
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    color: "#3F9AAE",
   },
   cardHeaderRight: {
     alignItems: "flex-end",
   },
   stationValue: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: "900",
     color: "#1A1A1A",
     letterSpacing: -1,
@@ -349,107 +541,103 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     color: "#9CA3AF",
-    textTransform: "uppercase",
   },
   trendBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     borderRadius: 8,
     marginTop: 4,
   },
   trendText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: "#fff",
   },
   stationName: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
     color: "#1A1A1A",
-    marginBottom: 6,
-    letterSpacing: -0.5,
+    marginBottom: 4,
+    letterSpacing: -0.3,
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   locationText: {
     fontSize: 12,
     fontWeight: "600",
     color: "#9CA3AF",
   },
-  sparklineContainer: {
-    backgroundColor: "rgba(255, 226, 175, 0.3)",
+  chartContainer: {
+    backgroundColor: "rgba(255, 226, 175, 0.2)",
     borderRadius: 16,
     padding: 16,
-    marginBottom: 24,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: "rgba(255, 226, 175, 0.4)",
+    borderColor: "rgba(255, 226, 175, 0.3)",
   },
-  sparkline: {
+  chartTitle: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#9CA3AF",
+    letterSpacing: 1.5,
+    marginBottom: 12,
+  },
+  chartLabels: {
     flexDirection: "row",
-    alignItems: "flex-end",
     justifyContent: "space-between",
-    height: 96,
-    gap: 4,
+    marginTop: 8,
   },
-  sparklineBar: {
-    flex: 1,
-    borderTopLeftRadius: 2,
-    borderTopRightRadius: 2,
+  chartLabel: {
+    fontSize: 9,
+    fontWeight: "600",
+    color: "#9CA3AF",
+  },
+  noDataContainer: {
+    height: CHART_HEIGHT,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  noDataText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#9CA3AF",
   },
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  analystsRow: {
+  readingsInfo: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    alignItems: "baseline",
+    gap: 4,
   },
-  analysts: {
-    flexDirection: "row",
+  readingsCount: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#3F9AAE",
   },
-  analystAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2.5,
-    borderColor: "#fff",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  analystInitial: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  analystsLabel: {
-    fontSize: 10,
-    fontWeight: "700",
+  readingsLabel: {
+    fontSize: 11,
+    fontWeight: "600",
     color: "#9CA3AF",
-    textTransform: "uppercase",
   },
   analysisButton: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     backgroundColor: "#3F9AAE",
-    paddingLeft: 24,
-    paddingRight: 20,
+    paddingLeft: 20,
+    paddingRight: 16,
     paddingVertical: 12,
-    borderRadius: 24,
+    borderRadius: 20,
     shadowColor: "#3F9AAE",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -457,10 +645,9 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   analysisButtonText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "800",
     color: "#fff",
-    letterSpacing: 1,
-    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

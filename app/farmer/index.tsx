@@ -266,24 +266,34 @@ function MapScreenContent() {
                 <View>
                   <Text style={styles.bottomSheetTitle}>Nearby Insights</Text>
                   <Text style={styles.bottomSheetSubtitle}>
-                    {nearbyStations.length} stations • 50km radius
+                    {userLocation 
+                      ? `${nearbyStations.length} stations • Sorted by distance`
+                      : `${nearbyStations.length} stations • 50km radius`}
                   </Text>
                 </View>
               </View>
             </View>
 
-            <FlatList
-              data={nearbyStations}
-              keyExtractor={(station) => station.id}
-              renderItem={({ item: station }) => (
-                <StationCard
-                  station={station}
-                  onPress={() => router.push(`/station/${station.id}`)}
-                />
-              )}
-              scrollEnabled={false}
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
-            />
+            {nearbyStations.length === 0 ? (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <Text style={{ color: '#64748b', fontSize: 14 }}>
+                  Loading nearby stations...
+                </Text>
+              </View>
+            ) : (
+              <FlatList
+                data={nearbyStations}
+                keyExtractor={(station) => station.id}
+                renderItem={({ item: station }) => (
+                  <StationCard
+                    station={station}
+                    onPress={() => router.push(`/station/${station.id}`)}
+                  />
+                )}
+                scrollEnabled={false}
+                contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+              />
+            )}
           </View>
         </ScrollView>
       </View>

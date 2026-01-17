@@ -129,7 +129,7 @@ function HomeScreenContent() {
         <View style={styles.headerRight}>
           <TouchableOpacity 
             style={styles.headerButton}
-            onPress={() => router.push('/(tabs)/alerts')}
+            onPress={() => router.push('/early-alerts')}
             activeOpacity={0.7}
           >
             <Bell size={22} color="#64748b" />
