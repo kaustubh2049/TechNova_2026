@@ -1,523 +1,466 @@
-import React, { useState } from 'react';
+import { useStations } from "@/providers/stations-provider";
+import { LinearGradient } from 'expo-linear-gradient';
 import {
-  View,
-  Text,
+  ArrowRight,
+  ChevronDown,
+  MapPin,
+  Search,
+  SlidersHorizontal,
+  TrendingDown,
+  TrendingUp
+} from "lucide-react-native";
+import React, { useState } from "react";
+import {
+  ScrollView,
   StyleSheet,
+  Text,
   TouchableOpacity,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
-import { LineChart } from 'react-native-chart-kit';
-import { predictGroundwater, type PredictionResult } from '../../services/predictionService';
+  View
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type RiskStatus = 'Safe' | 'Watch' | 'Alert' | 'Critical';
+function StationExplorerContent() {
+  const { stations, getAnalytics } = useStations();
+  const insets = useSafeAreaInsets();
+  const [searchQuery, setSearchQuery] = useState("");
+  const analytics = getAnalytics();
 
-const getRiskStatus = (level: number): { status: RiskStatus; color: string } => {
-  // Example bands – adjust thresholds to match your domain
-  if (level < 10) {
-    return { status: 'Safe', color: '#16a34a' }; // green
-  } else if (level < 20) {
-    return { status: 'Watch', color: '#f59e0b' }; // amber
-  } else if (level < 25) {
-    return { status: 'Alert', color: '#ea580c' }; // orange
-  } else {
-    return { status: 'Critical', color: '#b91c1c' }; // red
-  }
-};
-
-const buildRecommendations = (
-  status: RiskStatus,
-  trend: PredictionResult['trend'],
-  currentLevel: number,
-  futureLevel: number,
-  horizonYears: number
-): string[] => {
-  const recs: string[] = [];
-
-  // Generic interpretation of trend
-  if (trend === 'increasing') {
-    recs.push(
-      'Groundwater level is improving compared to the last observation. Maintain current conservation measures.'
-    );
-  } else if (trend === 'decreasing') {
-    recs.push(
-      'Groundwater level is declining. Consider additional recharge structures and stricter extraction control.'
-    );
-  } else {
-    recs.push(
-      'Groundwater level is relatively stable. Continue monitoring to detect early signs of stress.'
-    );
-  }
-
-  // Risk-based advice
-  if (status === 'Safe') {
-    recs.push(
-      'Current conditions are within a safe range, but periodic monitoring is still recommended.'
-    );
-  } else if (status === 'Watch') {
-    recs.push(
-      'Levels are entering a watch zone. Plan for demand management and awareness campaigns in sensitive areas.'
-    );
-  } else if (status === 'Alert') {
-    recs.push(
-      'Alert level reached. Prioritize recharge interventions and review large groundwater-dependent usages.'
-    );
-  } else if (status === 'Critical') {
-    recs.push(
-      'Critical stress detected. Consider immediate restrictions on new extractions and promote alternative sources.'
-    );
-  }
-
-  // Forecast-based advice
-  const delta = futureLevel - currentLevel;
-  if (Math.abs(delta) > 0.5) {
-    const direction = delta > 0 ? 'rise' : 'drop';
-    recs.push(
-      `Model projection suggests a ${direction} of about ${Math.abs(
-        delta
-      ).toFixed(1)} m over the next ${horizonYears} years. Use this horizon for long-term planning.`
-    );
-  }
-
-  return recs.slice(0, 3); // keep top 2–3 points
-};
-
-export default function PredictionsScreen() {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<PredictionResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [recentPredictions, setRecentPredictions] = useState<number[]>([]);
-  const [horizonYears, setHorizonYears] = useState<5 | 10>(5);
-
-  const handleRunPrediction = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      // Temporary demo values. Later we can wire this to selected station / user input.
-      const prediction = await predictGroundwater({
-        lat: 22.1,
-        lon: 80.55,
-        month: 5,
-        rainfall: 50,
-      });
-
-      setResult(prediction);
-      setRecentPredictions((prev) => {
-        const updated = [...prev, prediction.predictedLevel];
-        return updated.slice(-6);
-      });
-    } catch (e) {
-      setError('Failed to fetch prediction. Please try again.');
-      setResult(null);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const maxPrediction =
-    recentPredictions.length > 0 ? Math.max(...recentPredictions) : null;
-
-  const buildYearProjection = () => {
-    if (!result) return null;
-
-    const currentYear = new Date().getFullYear();
-    const centerLevel = result.predictedLevel;
-
-    let yearlyChange = 0;
-    if (result.trend === 'increasing') {
-      yearlyChange = 0.15; // meters per year (illustrative)
-    } else if (result.trend === 'decreasing') {
-      yearlyChange = -0.15;
-    }
-
-    const years: number[] = [];
-    const levels: number[] = [];
-
-    for (let offset = 0; offset <= horizonYears; offset++) {
-      years.push(currentYear + offset);
-      levels.push(centerLevel + yearlyChange * offset);
-    }
-
-    return { years, levels };
-  };
+  // Sample station data with status
+  const stationData = stations.slice(0, 10).map((station, index) => ({
+    ...station,
+    status: index % 3 === 0 ? 'critical' : index % 3 === 1 ? 'safe' : 'warning',
+    value: `${(Math.random() * 50).toFixed(2)}`,
+    trend: index % 2 === 0 ? 'up' : 'down',
+    trendValue: `${(Math.random() * 2).toFixed(2)}`,
+  }));
 
   return (
-    <View style={styles.container}>
-      <View style={styles.headerSection}>
-        <Text style={styles.title}>Groundwater Prediction</Text>
-        <Text style={styles.subtitle}>
-          Run the model to get a predicted groundwater level for the demo
-          location.
-        </Text>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.buttonDisabled]}
-          onPress={handleRunPrediction}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.buttonText}>Run Prediction</Text>
-          )}
-        </TouchableOpacity>
-
-        {error && <Text style={styles.errorText}>{error}</Text>}
-
-        {result &&
-          (() => {
-            const { status, color } = getRiskStatus(result.predictedLevel);
-
-            return (
-              <View style={styles.resultCard}>
-                <View style={styles.resultHeaderRow}>
-                  <Text style={styles.resultLabel}>Predicted Water Level</Text>
-                  <View
-                    style={[
-                      styles.riskChip,
-                      { backgroundColor: color + '20' },
-                    ]}
-                  >
-                    <View
-                      style={[styles.riskDot, { backgroundColor: color }]}
-                    />
-                    <Text style={[styles.riskChipText, { color }]}>{status}</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.resultValue}>
-                  {result.predictedLevel.toFixed(2)} m bgl
-                </Text>
-                <Text style={styles.resultMeta}>Trend: {result.trend}</Text>
-              </View>
-            );
-          })()}
-      </View>
-
-      <View style={styles.graphSection}>
-        <View style={styles.horizonHeader}>
-          <Text style={styles.graphTitle}>
-            {horizonYears}-Year Projection (Illustrative)
-          </Text>
-          <View style={styles.horizonToggleContainer}>
-            <TouchableOpacity
-              style={[
-                styles.horizonButton,
-                horizonYears === 5 && styles.horizonButtonActive,
-              ]}
-              onPress={() => setHorizonYears(5)}
-            >
-              <Text
-                style={[
-                  styles.horizonButtonText,
-                  horizonYears === 5 && styles.horizonButtonTextActive,
-                ]}
-              >
-                5 yrs
-              </Text>
+    <LinearGradient
+      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View style={styles.headerLeft}>
+            <View style={styles.headerIcon}>
+              <MapPin size={24} color="#3F9AAE" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>Station Explorer</Text>
+              <Text style={styles.headerSubtitle}>GLOBAL NETWORK</Text>
+            </View>
+          </View>
+          <View style={styles.headerRight}>
+            <TouchableOpacity style={styles.headerButton}>
+              <Search size={20} color="#64748b" />
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.horizonButton,
-                horizonYears === 10 && styles.horizonButtonActive,
-              ]}
-              onPress={() => setHorizonYears(10)}
-            >
-              <Text
-                style={[
-                  styles.horizonButtonText,
-                  horizonYears === 10 && styles.horizonButtonTextActive,
-                ]}
-              >
-                10 yrs
-              </Text>
+            <TouchableOpacity style={styles.headerButton}>
+              <SlidersHorizontal size={20} color="#64748b" />
             </TouchableOpacity>
           </View>
         </View>
-        {!result ? (
-          <Text style={styles.graphPlaceholder}>
-            Run a prediction to see projected groundwater levels over the next
-            few years.
-          </Text>
-        ) : (
-          (() => {
-            const projection = buildYearProjection();
-            if (!projection) {
-              return (
-                <Text style={styles.graphPlaceholder}>
-                  Not enough data to build projection.
-                </Text>
-              );
-            }
 
-            const futureLevel =
-              projection.levels[projection.levels.length - 1] ??
-              result.predictedLevel;
-
-            return (
-              <>
-                <LineChart
-                  data={{
-                    labels: projection.years.map((year, index) =>
-                      horizonYears === 5 ||
-                      index === 0 ||
-                      index === projection.years.length - 1
-                        ? String(year)
-                        : ''
-                    ),
-                    datasets: [
-                      {
-                        data: projection.levels,
-                      },
-                    ],
-                  }}
-                  width={Dimensions.get('window').width - 48}
-                  height={220}
-                  yAxisSuffix=" m"
-                  chartConfig={{
-                    backgroundColor: '#ffffff',
-                    backgroundGradientFrom: '#ffffff',
-                    backgroundGradientTo: '#ffffff',
-                    decimalPlaces: 2,
-                    color: (opacity = 1) => `rgba(56, 189, 248, ${opacity})`,
-                    labelColor: (opacity = 1) =>
-                      `rgba(100, 116, 139, ${opacity})`,
-                    propsForDots: {
-                      r: '3',
-                      strokeWidth: '1',
-                      stroke: '#0ea5e9',
-                    },
-                  }}
-                  bezier
-                  style={styles.lineChart}
-                />
-
-                <Text style={styles.projectionSummary}>
-                  Current year {new Date().getFullYear()}: ~
-                  {result.predictedLevel.toFixed(2)} m · In {horizonYears} years:
-                  ~{futureLevel.toFixed(2)} m
-                </Text>
-              </>
-            );
-          })()
-        )}
+        {/* Filter Pills */}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterScroll}
+          contentContainerStyle={styles.filterContent}
+        >
+          <TouchableOpacity style={styles.filterActive}>
+            <Text style={styles.filterActiveText}>All Regions</Text>
+            <ChevronDown size={14} color="#3F9AAE" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.filterPill}>
+            <Text style={styles.filterPillText}>Critical</Text>
+            <View style={[styles.statusDot, { backgroundColor: '#F96E5B' }]} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.filterPill}>
+            <Text style={styles.filterPillText}>Safe</Text>
+            <View style={[styles.statusDot, { backgroundColor: '#79C9C5' }]} />
+          </TouchableOpacity>
+        </ScrollView>
       </View>
 
-      {/* Smart recommendations */}
-      {result &&
-        (() => {
-          const projection = buildYearProjection();
-          const { status } = getRiskStatus(result.predictedLevel);
-          const futureLevel =
-            projection && projection.levels.length > 0
-              ? projection.levels[projection.levels.length - 1]
-              : result.predictedLevel;
-
-          const recs = buildRecommendations(
-            status,
-            result.trend,
-            result.predictedLevel,
-            futureLevel,
-            horizonYears
-          );
-
-          return (
-            <View style={styles.recommendationsCard}>
-              <Text style={styles.recommendationsTitle}>Recommendations</Text>
-              {recs.map((text, index) => (
-                <View key={index} style={styles.recommendationRow}>
-                  <Text style={styles.recommendationBullet}>•</Text>
-                  <Text style={styles.recommendationText}>{text}</Text>
+      {/* Station List */}
+      <ScrollView 
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
+        {stationData.map((station, index) => (
+          <View key={station.id} style={styles.stationCard}>
+            <View style={styles.cardHeader}>
+              <View style={styles.cardHeaderLeft}>
+                <View style={[
+                  styles.statusBadge,
+                  { backgroundColor: station.status === 'critical' ? '#F96E5B' : 
+                                    station.status === 'safe' ? '#79C9C5' : '#FFE2AF' }
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    { color: station.status === 'warning' ? '#1A1A1A' : '#fff' }
+                  ]}>
+                    {station.status.toUpperCase()}
+                  </Text>
                 </View>
-              ))}
+                <Text style={styles.stationCode}>ST-{station.id}</Text>
+              </View>
+              <View style={styles.cardHeaderRight}>
+                <Text style={styles.stationValue}>{station.value}<Text style={styles.stationUnit}>m</Text></Text>
+                <View style={[
+                  styles.trendBadge,
+                  { backgroundColor: station.trend === 'up' ? '#79C9C5' : '#F96E5B' }
+                ]}>
+                  {station.trend === 'up' ? 
+                    <TrendingUp size={12} color="#fff" /> : 
+                    <TrendingDown size={12} color="#fff" />
+                  }
+                  <Text style={styles.trendText}>
+                    {station.trend === 'up' ? '+' : '-'}{station.trendValue}/mo
+                  </Text>
+                </View>
+              </View>
             </View>
-          );
-        })()}
-    </View>
+
+            <Text style={styles.stationName}>{station.name}</Text>
+            <View style={styles.locationRow}>
+              <MapPin size={12} color="#79C9C5" />
+              <Text style={styles.locationText}>{station.district}</Text>
+            </View>
+
+            {/* Sparkline */}
+            <View style={styles.sparklineContainer}>
+              <View style={styles.sparkline}>
+                {[30, 35, 40, 45, 55, 65, 75, 85, 90, 100].map((height, i) => (
+                  <View 
+                    key={i}
+                    style={[
+                      styles.sparklineBar,
+                      { 
+                        height: `${height}%`,
+                        backgroundColor: i >= 6 ? 
+                          (station.status === 'critical' ? 'rgba(249, 110, 91, 0.7)' : 'rgba(121, 201, 197, 0.7)') :
+                          'rgba(121, 201, 197, 0.4)'
+                      }
+                    ]}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {/* Footer */}
+            <View style={styles.cardFooter}>
+              <View style={styles.analystsRow}>
+                <View style={styles.analysts}>
+                  <View style={[styles.analystAvatar, { backgroundColor: '#3F9AAE' }]}>
+                    <Text style={styles.analystInitial}>A</Text>
+                  </View>
+                  <View style={[styles.analystAvatar, { backgroundColor: '#79C9C5', marginLeft: -12 }]}>
+                    <Text style={styles.analystInitial}>B</Text>
+                  </View>
+                </View>
+                <Text style={styles.analystsLabel}>Analyst Assigned</Text>
+              </View>
+              <TouchableOpacity style={styles.analysisButton}>
+                <Text style={styles.analysisButtonText}>Analysis</Text>
+                <ArrowRight size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))}
+      </ScrollView>
+    </LinearGradient>
   );
+}
+
+export default function StationExplorer() {
+  return <StationExplorerContent />;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: '#f8fafc',
+    backgroundColor: "#FFE2AF", // Sunset cream
   },
-  headerSection: {
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    color: '#475569',
-    marginBottom: 24,
-  },
-  button: {
+  header: {
     paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 999,
-    backgroundColor: '#2563eb',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: 20,
+    paddingBottom: 16,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
   },
-  buttonDisabled: {
-    opacity: 0.7,
+  headerTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 16,
   },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  headerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
-  errorText: {
-    marginTop: 16,
-    color: '#b91c1c',
-    textAlign: 'center',
-  },
-  resultCard: {
-    marginTop: 24,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#e0f2fe',
-    alignItems: 'center',
-    minWidth: '80%',
-  },
-  resultLabel: {
-    fontSize: 14,
-    color: '#0f172a',
-    marginBottom: 4,
-  },
-  resultValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1d4ed8',
-    marginBottom: 4,
-  },
-  resultMeta: {
-    fontSize: 14,
-    color: '#1e293b',
-  },
-  graphSection: {
-    marginTop: 24,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-  },
-  graphTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  graphPlaceholder: {
-    fontSize: 14,
-    color: '#64748b',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  horizonHeader: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  horizonToggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#e5e7eb',
-    borderRadius: 999,
-    padding: 2,
-  },
-  horizonButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  horizonButtonActive: {
-    backgroundColor: '#1d4ed8',
-  },
-  horizonButtonText: {
-    fontSize: 12,
-    color: '#0f172a',
-  },
-  horizonButtonTextActive: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  lineChart: {
-    marginTop: 8,
+  headerIcon: {
+    width: 40,
+    height: 40,
     borderRadius: 16,
+    backgroundColor: "rgba(63, 154, 174, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  projectionSummary: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#475569',
-    textAlign: 'center',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#1A1A1A",
+    letterSpacing: -0.5,
   },
-  resultHeaderRow: {
-    width: '100%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+  headerSubtitle: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#64748b",
+    letterSpacing: 1.5,
   },
-  riskChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  headerRight: {
+    flexDirection: "row",
+    gap: 12,
   },
-  riskDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    marginRight: 4,
+  headerButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F9FAFB",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  riskChipText: {
-    fontSize: 12,
-    fontWeight: '600',
+  filterScroll: {
+    marginTop: 4,
   },
-  recommendationsCard: {
-    marginTop: 24,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
-    width: '100%',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+  filterContent: {
+    gap: 12,
+    paddingRight: 24,
+  },
+  filterActive: {
+    flexDirection: "row",
+    height: 32,
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  filterActiveText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#3F9AAE",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  filterPill: {
+    flexDirection: "row",
+    height: 32,
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(63, 154, 174, 0.4)",
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  filterPillText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  stationCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 24,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(121, 201, 197, 0.2)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  cardHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
     elevation: 2,
   },
-  recommendationsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 8,
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
-  recommendationRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 4,
+  stationCode: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
-  recommendationBullet: {
+  cardHeaderRight: {
+    alignItems: "flex-end",
+  },
+  stationValue: {
+    fontSize: 30,
+    fontWeight: "900",
+    color: "#1A1A1A",
+    letterSpacing: -1,
+  },
+  stationUnit: {
     fontSize: 12,
-    color: '#0f172a',
-    marginRight: 6,
-    marginTop: 2,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
   },
-  recommendationText: {
+  trendBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  trendText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  stationName: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#1A1A1A",
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 24,
+  },
+  locationText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#9CA3AF",
+  },
+  sparklineContainer: {
+    backgroundColor: "rgba(255, 226, 175, 0.3)",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 226, 175, 0.4)",
+  },
+  sparkline: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    height: 96,
+    gap: 4,
+  },
+  sparklineBar: {
     flex: 1,
-    fontSize: 13,
-    color: '#475569',
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+  },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  analystsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  analysts: {
+    flexDirection: "row",
+  },
+  analystAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2.5,
+    borderColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  analystInitial: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  analystsLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    textTransform: "uppercase",
+  },
+  analysisButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#3F9AAE",
+    paddingLeft: 24,
+    paddingRight: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: "#3F9AAE",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  analysisButtonText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 1,
+    textTransform: "uppercase",
   },
 });

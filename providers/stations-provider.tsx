@@ -1,12 +1,12 @@
 import { supabase } from "@/lib/supabase";
 import * as Location from "expo-location";
 import React, {
-  createContext,
-  useContext,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
 } from "react";
 import { Platform } from "react-native";
 
@@ -460,10 +460,18 @@ interface StationsContextType {
   stationsError: string | null;
   getStationById: (id: string) => Station | undefined;
   getStationReadings: (
-    stationId: string,
-    timeframe: string
-  ) => Promise<{ timestamp: string; level: number; temperature?: number }[]>;
-  getAnalytics: () => { nearbyStations: Station[]; regionalData: any };
+    latitude: number,
+    longitude: number,
+    timeframe: "6m" | "1y" | "2y"
+  ) => Promise<DatabaseReading[]>;
+  getAnalytics: () => { 
+    nearbyStationCount: number;
+    avgWaterLevel: number;
+    rechargeEvents: number;
+    criticalStations: number;
+    nearbyStations: Station[]; 
+    regionalData: any 
+  };
   requestLocationPermission: () => Promise<void>;
 }
 
@@ -635,13 +643,6 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
       recentReadings: [],
       rechargeData: [],
     };
-
-    // Ensure minimum specific yield
-    if (station.specificYield <= 0) {
-      station.specificYield = 0.15;
-    }
-
-    return station;
   };
 
   // Fetch stations from Supabase using st_map_data table
@@ -925,7 +926,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             stationName: station.name,
             type: "critical",
             title: "High Water Level Alert",
-            description: `Water level at ${station.name} is ${station.currentLevel}m (${distanceText})`,
+            message: `Water level at ${station.name} is ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
               now.getTime() - Math.random() * 2 * 60 * 60 * 1000
             ).toISOString(),
@@ -938,7 +939,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             stationName: station.name,
             type: "warning",
             title: "Moderate Water Level",
-            description: `Water level declining at ${station.name}: ${station.currentLevel}m (${distanceText})`,
+            message: `Water level declining at ${station.name}: ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
               now.getTime() - Math.random() * 4 * 60 * 60 * 1000
             ).toISOString(),
@@ -951,7 +952,7 @@ export const StationsProvider: React.FC<{ children: React.ReactNode }> = ({
             stationName: station.name,
             type: "info",
             title: "Good Recharge Detected",
-            description: `Positive recharge at ${station.name}: ${station.currentLevel}m (${distanceText})`,
+            message: `Positive recharge at ${station.name}: ${station.currentLevel}m (${distanceText})`,
             timestamp: new Date(
               now.getTime() - Math.random() * 6 * 60 * 60 * 1000
             ).toISOString(),

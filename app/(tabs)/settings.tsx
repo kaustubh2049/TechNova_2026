@@ -1,16 +1,17 @@
 import { useAuth } from "@/providers/auth-provider";
 import { useTheme } from "@/providers/theme-provider";
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from "expo-router";
 import { Bell, ChevronRight, Database, Globe, HelpCircle, LogOut, Moon, User } from "lucide-react-native";
 import React from "react";
 import {
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -68,7 +69,10 @@ export default function SettingsScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Settings</Text>
@@ -170,26 +174,25 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
   },
   header: {
     paddingHorizontal: 20,
     paddingVertical: 16,
     backgroundColor: "white",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#E5E7EB",
   },
   headerTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "#1A1A1A",
   },
   content: {
     flex: 1,

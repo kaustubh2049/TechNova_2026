@@ -1,41 +1,37 @@
 import { Tabs } from "expo-router";
-import { BarChart3, Bell, Bot, MapPin, Settings } from "lucide-react-native";
+import { ChartBar, Layers, LayoutDashboard, MapPin } from "lucide-react-native";
 import React from "react";
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#1d4ed8",
-        tabBarInactiveTintColor: "#64748b",
+        tabBarActiveTintColor: "#3F9AAE", // Ocean blue
+        tabBarInactiveTintColor: "#9CA3AF",
         headerShown: false,
         tabBarStyle: {
           backgroundColor: "#ffffff",
-          borderTopWidth: 0,
+          borderTopWidth: 1,
+          borderTopColor: "rgba(0,0,0,0.05)",
           elevation: 10,
-          shadowColor: "#1e293b",
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 12,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.03,
+          shadowRadius: 20,
           height: 70,
-          borderTopLeftRadius: 18,
-          borderTopRightRadius: 18,
-          position: "relative", // Changed from absolute to relative
+          position: "relative",
           marginBottom: 0,
           paddingBottom: 0,
         },
         tabBarLabelStyle: {
-          fontSize: 13,
+          fontSize: 10,
           fontWeight: "700",
-          marginTop: 2,
-          letterSpacing: 0.2,
+          marginTop: 4,
+          letterSpacing: 0.5,
+          textTransform: "uppercase",
         },
         tabBarIconStyle: {
-          marginTop: 6,
-        },
-        tabBarItemStyle: {
-          borderRadius: 16,
-          marginHorizontal: 8,
+          marginTop: 8,
         },
       }}
     >
@@ -43,42 +39,42 @@ export default function TabLayout() {
         name="home"
         options={{
           title: "Home",
-          tabBarIcon: ({ color, size }) => <MapPin size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <LayoutDashboard size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="analytics"
         options={{
           title: "Analytics",
-          tabBarIcon: ({ color, size }) => <BarChart3 size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <ChartBar size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="predictions"
         options={{
-          title: "Predict",
-          tabBarIcon: ({ color, size }) => <MapPin size={size} color={color} />,
+          title: "Stations",
+          tabBarIcon: ({ color, size }) => <Layers size={22} color={color} />,
         }}
       />
       <Tabs.Screen
         name="alerts"
         options={{
-          title: "Alerts",
-          tabBarIcon: ({ color, size }) => <Bell size={size} color={color} />,
+          title: "Map",
+          tabBarIcon: ({ color, size }) => <MapPin size={22} color={color} />,
+        }}
+      />
+      
+      {/* Hidden tabs - keeping functionality but not showing in nav */}
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null, // Hide from tab bar - accessible via avatar click
         }}
       />
       <Tabs.Screen
         name="chatbot"
         options={{
-          title: "AI",
-          tabBarIcon: ({ color, size }) => <Bot size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="settings"
-        options={{
-          title: "Settings",
-          tabBarIcon: ({ color, size }) => <Settings size={size} color={color} />,
+          href: null, // Hide from tab bar
         }}
       />
     </Tabs>

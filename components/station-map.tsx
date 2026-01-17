@@ -4,12 +4,15 @@ import React, { useMemo, useRef } from "react";
 import { Dimensions, StyleSheet, View } from "react-native";
 import WebView, { WebViewMessageEvent } from "react-native-webview";
 
+import { ViewStyle } from "react-native";
+
 interface StationMapProps {
   stations: Station[];
   userLocation?: LocationData | null;
   onStationPress: (station: Station) => void;
   activeLayer?: "groundwater" | "temperature" | "soil" | "crop" | "wind";
   windData?: ProcessedWindData[];
+  style?: ViewStyle;
 }
 
 export function StationMap({
@@ -18,6 +21,7 @@ export function StationMap({
   onStationPress,
   activeLayer = "groundwater",
   windData = [],
+  style,
 }: StationMapProps) {
   const { height } = Dimensions.get("window");
   const webRef = useRef<WebView | null>(null);
@@ -390,7 +394,7 @@ setTimeout(notifyBounds, 0);
   };
 
   return (
-    <View style={[styles.container, { height: height * 0.5 }]}>
+    <View style={[styles.container, style || { height: height * 0.5 }]}>
       <WebView
         ref={(r) => {
           webRef.current = r;

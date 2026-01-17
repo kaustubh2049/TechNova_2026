@@ -1,4 +1,5 @@
 import { useStations } from "@/providers/stations-provider";
+import { LinearGradient } from 'expo-linear-gradient';
 import { Send } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -58,7 +59,6 @@ Context (analytics summary): avgWaterLevel=${analytics.avgWaterLevel.toFixed(1)}
       ...history.map(m => ({ role: m.role, content: m.content } as any)),
     ];
 
-    // Timeout + abort controller
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
 
@@ -67,7 +67,6 @@ Context (analytics summary): avgWaterLevel=${analytics.avgWaterLevel.toFixed(1)}
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
-        // These headers are allowed on native. On web, actual Referer is set by browser and cannot be overridden.
         "X-Title": "SIH Groundwater Assistant",
       },
       body: JSON.stringify({
@@ -97,7 +96,6 @@ Context (analytics summary): avgWaterLevel=${analytics.avgWaterLevel.toFixed(1)}
     try {
       return await callModel(history);
     } catch (e1) {
-      // quick retry once
       await new Promise(r => setTimeout(r, 800));
       try {
         return await callModel(history);
@@ -117,7 +115,7 @@ Context (analytics summary): avgWaterLevel=${analytics.avgWaterLevel.toFixed(1)}
     setIsSending(true);
     try {
       setLastError(null);
-      const history = [...messages, userMsg].slice(-10); // keep last 10 turns
+      const history = [...messages, userMsg].slice(-10);
       const modelReply = await callModelWithRetry(history);
       const reply: Message = { id: String(Date.now() + 1), role: "assistant", content: modelReply };
       setMessages(prev => [...prev, reply]);
@@ -133,80 +131,91 @@ Context (analytics summary): avgWaterLevel=${analytics.avgWaterLevel.toFixed(1)}
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>AI Water Assistant</Text>
-        <Text style={styles.headerSubtitle}>Ask about groundwater and resources</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.suggestionsRow}
-        >
-          {suggestions.map((s, i) => (
-            <TouchableOpacity key={i} onPress={() => setInput(s)} style={styles.suggestionChip} activeOpacity={0.85}>
-              <Text style={styles.suggestionText}>{s}</Text>
-            </TouchableOpacity>
+    <LinearGradient
+      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
+      <KeyboardAvoidingView 
+        style={{ flex: 1, paddingBottom: Platform.OS === 'ios' ? insets.bottom : 0 }} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>AI Water Assistant</Text>
+          <Text style={styles.headerSubtitle}>Ask about groundwater and resources</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.suggestionsRow}
+          >
+            {suggestions.map((s, i) => (
+              <TouchableOpacity key={i} onPress={() => setInput(s)} style={styles.suggestionChip} activeOpacity={0.85}>
+                <Text style={styles.suggestionText}>{s}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+        <ScrollView style={styles.chat} contentContainerStyle={{ paddingVertical: 12 }}>
+          {lastError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorText}>AI request issue: {lastError}</Text>
+            </View>
+          ) : null}
+          {messages.map(m => (
+            <View key={m.id} style={[styles.row, m.role === 'user' ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
+              {m.role === 'assistant' ? <View style={styles.avatarAssistant}><Text style={styles.avatarText}>AI</Text></View> : null}
+              <View style={[styles.bubble, m.role === 'user' ? styles.user : styles.assistant]}>
+                <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.content}</Text>
+              </View>
+              {m.role === 'user' ? <View style={styles.avatarUser}><Text style={styles.avatarText}>U</Text></View> : null}
+            </View>
           ))}
+          {isSending ? (
+            <View style={[styles.row, { justifyContent: 'flex-start' }]}>
+              <View style={styles.avatarAssistant}><Text style={styles.avatarText}>AI</Text></View>
+              <View style={[styles.bubble, styles.assistant]}>
+                <Text style={styles.assistantText}>Typing…</Text>
+              </View>
+            </View>
+          ) : null}
         </ScrollView>
-      </View>
-      <ScrollView style={styles.chat} contentContainerStyle={{ paddingVertical: 12 }}>
-        {lastError ? (
-          <View style={styles.errorBanner}>
-            <Text style={styles.errorText}>AI request issue: {lastError}</Text>
-          </View>
-        ) : null}
-        {messages.map(m => (
-          <View key={m.id} style={[styles.row, m.role === 'user' ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}>
-            {m.role === 'assistant' ? <View style={styles.avatarAssistant}><Text style={styles.avatarText}>AI</Text></View> : null}
-            <View style={[styles.bubble, m.role === 'user' ? styles.user : styles.assistant]}>
-              <Text style={m.role === 'user' ? styles.userText : styles.assistantText}>{m.content}</Text>
-            </View>
-            {m.role === 'user' ? <View style={styles.avatarUser}><Text style={styles.avatarText}>U</Text></View> : null}
-          </View>
-        ))}
-        {isSending ? (
-          <View style={[styles.row, { justifyContent: 'flex-start' }]}>
-            <View style={styles.avatarAssistant}><Text style={styles.avatarText}>AI</Text></View>
-            <View style={[styles.bubble, styles.assistant]}>
-              <Text style={styles.assistantText}>Typing…</Text>
-            </View>
-          </View>
-        ) : null}
-      </ScrollView>
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }] }>
-        <TextInput
-          value={input}
-          onChangeText={setInput}
-          placeholder="Ask about water levels, recharge, critical stations..."
-          style={styles.input}
-          placeholderTextColor="#94a3b8"
-          returnKeyType="send"
-          onSubmitEditing={() => !isSending && onSend()}
-          blurOnSubmit={false}
-          multiline
-          numberOfLines={1}
-        />
-        <TouchableOpacity disabled={isSending} onPress={onSend} style={[styles.sendBtn, isSending && { opacity: 0.6 }]} activeOpacity={0.85}>
-          <Send size={18} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 10) }] }>
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask about water levels..."
+            style={styles.input}
+            placeholderTextColor="#94a3b8"
+            returnKeyType="send"
+            onSubmitEditing={() => !isSending && onSend()}
+            blurOnSubmit={false}
+            multiline
+            numberOfLines={1}
+          />
+          <TouchableOpacity disabled={isSending} onPress={onSend} style={[styles.sendBtn, isSending && { opacity: 0.6 }]} activeOpacity={0.85}>
+            <Send size={18} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   header: {
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 8,
     backgroundColor: "#ffffff",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#E5E7EB",
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#0f172a",
+    color: "#1A1A1A",
   },
   headerSubtitle: {
     marginTop: 2,
@@ -215,7 +224,6 @@ const styles = StyleSheet.create({
   },
   chat: {
     flex: 1,
-    backgroundColor: "#f8fafc",
     paddingHorizontal: 16,
   },
   suggestionsRow: {
@@ -303,7 +311,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#E5E7EB',
   },
   input: {
     flex: 1,
@@ -324,5 +332,3 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
 });
-
-

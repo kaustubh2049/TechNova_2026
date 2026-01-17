@@ -1,12 +1,25 @@
-import { StationCard } from "@/components/station-card";
-import { StationMap } from "@/components/station-map";
+import { useAuth } from "@/providers/auth-provider";
 import { useStations } from "@/providers/stations-provider";
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from "expo-router";
-import { Bell, Droplet, Info, MapPin, RefreshCw } from "lucide-react-native";
-import React, { useState } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
+  AlertTriangle,
+  ArrowRight,
+  Bell,
+  CheckCircle,
+  ChevronRight,
+  Droplet,
+  MapPin,
+  Plus,
+  Scale,
+  TrendingDown,
+  TrendingUp,
+  Zap
+} from "lucide-react-native";
+import React, { useEffect, useMemo, useRef } from "react";
+import {
+  Animated,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,418 +27,849 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-function MapScreenContent() {
-  const { 
-    stations, 
-    nearbyStations, 
-    userLocation, 
-    isLoadingLocation, 
-    locationError, 
-    requestLocationPermission,
-    estimatedLevel,
-  } = useStations();
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [isBottomSheetExpanded, setIsBottomSheetExpanded] = useState<boolean>(false);
+function HomeScreenContent() {
+  const { stations, getAnalytics, alerts, userLocation } = useStations();
+  const { user } = useAuth();
+  const analytics = getAnalytics();
   const insets = useSafeAreaInsets();
 
-  const filteredStations = stations.filter(station =>
-    station.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    station.district.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
+
+  // Get time-based greeting
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  // Get current date
+  const getCurrentDate = () => {
+    const date = new Date();
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Get user display name from auth
+  const displayName = user?.name || user?.email?.split('@')[0] || "Researcher";
+
+  // Hardcoded location as requested
+  const locationName = "Mahim, Mumbai";
+
+  // Calculate stats from analytics
+  const criticalStations = analytics.criticalStations;
+  const totalStations = stations.length;
+  const avgLevel = analytics.avgWaterLevel;
+  const rechargeEvents = analytics.rechargeEvents;
+  
+  // Calculate statewide change
+  const statewideChange = -0.4;
+  
+  // Calculate forecast risk
+  const forecastRisk = criticalStations > 5 ? "High" : criticalStations > 2 ? "Moderate" : "Low";
+  
+  // Last sync time
+  const lastSyncMinutes = 2;
+  
+  // Get functional recent anomalies from alerts
+  const recentAnomalies = useMemo(() => {
+    return alerts
+      .filter(a => a.type === 'critical' || a.type === 'warning')
+      .slice(0, 2)
+      .map(alert => ({
+        id: alert.id,
+        stationId: alert.stationId,
+        stationName: alert.stationName,
+        type: alert.type,
+        title: alert.title,
+        timestamp: alert.timestamp,
+      }));
+  }, [alerts]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>DWLR Stations</Text>
-          <View style={styles.locationContainer}>
-            {isLoadingLocation ? (
-              <View style={styles.locationStatus}>
-                <ActivityIndicator size="small" color="#0891b2" />
-                <Text style={styles.locationText}>Getting location...</Text>
-              </View>
-            ) : userLocation ? (
-              <View style={styles.locationStatus}>
-                <MapPin size={14} color="#059669" />
-                <Text style={styles.locationText}>
-                  {userLocation.latitude.toFixed(4)}, {userLocation.longitude.toFixed(4)}
-                </Text>
-              </View>
-            ) : (
-              <TouchableOpacity 
-                style={styles.locationStatus} 
-                onPress={requestLocationPermission}
-              >
-                <MapPin size={14} color="#dc2626" />
-                <Text style={[styles.locationText, { color: '#dc2626' }]}>
-                  {locationError || 'Tap to enable location'}
-                </Text>
-              </TouchableOpacity>
-            )}
+          <TouchableOpacity 
+            style={styles.avatar}
+            onPress={() => router.push('/(tabs)/settings')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+          </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>{getGreeting()}, {displayName}</Text>
+            <View style={styles.locationRow}>
+              <MapPin size={12} color="#64748b" />  
+              <Text style={styles.locationText}>{locationName}</Text>
+            </View>
           </View>
         </View>
         <View style={styles.headerRight}>
           <TouchableOpacity 
             style={styles.headerButton}
-            onPress={requestLocationPermission}
-            disabled={isLoadingLocation}
+            onPress={() => router.push('/(tabs)/chatbot')}
+            activeOpacity={0.7}
           >
-            {isLoadingLocation ? (
-              <ActivityIndicator size={20} color="#0891b2" />
-            ) : (
-              <RefreshCw size={20} color="#0891b2" />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton}>
-            <Bell size={24} color="#64748b" />
+            <Bell size={22} color="#64748b" />
+            <View style={styles.notificationDot} />
           </TouchableOpacity>
         </View>
       </View>
 
-    
+      <ScrollView 
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
+        {/* Daily Insight Banner */}
+        <Animated.View 
+          style={[
+            styles.dailyBanner,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          <View style={styles.bannerHeader}>
+            <MapPin size={20} color="#3F9AAE" />
+            <Text style={styles.bannerTitle}>Daily Insight</Text>
+          </View>
+          <Text style={styles.bannerDescription}>
+            Groundwater levels are stable overall. {criticalStations} critical zones show recharge lagging 12% behind seasonal expectations in your region.
+          </Text>
+          <TouchableOpacity 
+            style={styles.bannerAction}
+            onPress={() => router.push('/(tabs)/analytics')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.bannerActionText}>View Analysis</Text>
+            <ArrowRight size={14} color="#3F9AAE" />
+          </TouchableOpacity>
+        </Animated.View>
 
-      {/* Live Location Estimated Groundwater Level */}
-      <View style={styles.estimateContainer}>
-        <View style={styles.estimateCard}>
-          <View style={styles.estimateHeader}>
-            <View style={styles.estimateIconWrap}>
-              <Droplet size={18} color="#0ea5e9" />
-            </View>
-            <Text style={styles.estimateTitle}>Estimated Groundwater Level</Text>
-            {userLocation && (
-              <View style={styles.liveBadge}>
-                <View style={styles.liveDot} />
-                <Text style={styles.liveBadgeText}>Live</Text>
+        {/* Stats Grid */}
+        <Animated.View 
+          style={[
+            styles.statsGrid,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          {/* Avg Level */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(121, 201, 197, 0.1)' }]}>
+                <Droplet size={18} color="#79C9C5" />
               </View>
-            )}
+              <Text style={styles.statLabel}>AVG LEVEL</Text>
+            </View>
+            <View style={styles.statBottom}>
+              <Text style={styles.statValue}>-1.2m</Text>
+              <View style={styles.statTrend}>
+                <TrendingDown size={12} color="#F96E5B" />
+                <Text style={styles.statTrendText}>5.2% vs Q3</Text>
+              </View>
+            </View>
           </View>
 
-          <View style={styles.estimateValueRow}>
-            {estimatedLevel != null ? (
-              <>
-                <Text style={styles.estimateValue}>{estimatedLevel.toFixed(2)}</Text>
-                <Text style={styles.estimateUnit}>m</Text>
-              </>
-            ) : (
-              <Text style={styles.estimatePlaceholder}>
-                {userLocation ? '—' : 'Location needed to estimate'}
-              </Text>
-            )}
+          {/* Critical */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(249, 110, 91, 0.1)' }]}>
+                <AlertTriangle size={18} color="#F96E5B" />
+              </View>
+              <Text style={styles.statLabel}>CRITICAL</Text>
+            </View>
+            <View style={styles.statBottom}>
+              <Text style={styles.statValue}>{criticalStations}</Text>
+              <View style={styles.statTrend}>
+                <Plus size={12} color="#F96E5B" />
+                <Text style={styles.statTrendText}>2 new today</Text>
+              </View>
+            </View>
           </View>
 
-          {userLocation ? (
-            <View style={styles.estimateInfoRow}>
-              <Info size={14} color="#075985" />
-              <Text style={styles.estimateSubtext}>Based on nearby stations (IDW)</Text>
+          {/* Recharge */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <View style={[styles.statIconBg, { backgroundColor: 'rgba(255, 226, 175, 0.3)' }]}>
+                <Zap size={18} color="#9CA3AF" />
+              </View>
+              <Text style={styles.statLabel}>RECHARGE</Text>
+            </View>
+            <View style={styles.statBottom}>
+              <Text style={styles.statValue}>+4.5%</Text>
+              <View style={styles.statTrend}>
+                <CheckCircle size={12} color="#3F9AAE" />
+                <Text style={[styles.statTrendText, { color: '#3F9AAE' }]}>Optimal zone</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Supply Gap */}
+          <View style={styles.statCard}>
+            <View style={styles.statHeader}>
+              <View style={[styles.statIconBg, { backgroundColor: '#F9FAFB' }]}>
+                <Scale size={18} color="#9CA3AF" />
+              </View>
+              <Text style={styles.statLabel}>SUPPLY GAP</Text>
+            </View>
+            <View style={styles.statBottom}>
+              <Text style={styles.statValue}>18%</Text>
+              <View style={styles.progressBarContainer}>
+                <View style={[styles.progressBar, { width: '18%' }]} />
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
+        {/* Key Vital Signs */}
+        <Text style={styles.sectionTitle}>KEY VITAL SIGNS</Text>
+        <Animated.View 
+          style={[
+            styles.vitalsGrid,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
+        >
+          {/* Critical Stations */}
+          <View style={styles.vitalCard}>
+            <Text style={styles.vitalLabel}>CRITICAL STATIONS</Text>
+            <View style={[styles.vitalIconBg, { backgroundColor: '#FEE2E2' }]}>
+              <AlertTriangle size={28} color="#F96E5B" />
+            </View>
+            <Text style={[styles.vitalValue, { color: '#F96E5B' }]}>
+              {criticalStations.toString().padStart(2, '0')} <Text style={styles.vitalTotal}>/ {totalStations}</Text>
+            </Text>
+            <Text style={styles.vitalSubtext}>Requires Attention</Text>
+          </View>
+
+          {/* Statewide Change */}
+          <View style={styles.vitalCard}>
+            <Text style={styles.vitalLabel}>STATEWIDE CHANGE (30d)</Text>
+            <View style={[styles.vitalIconBg, { backgroundColor: '#E0F2FE' }]}>
+              <TrendingDown size={28} color="#79C9C5" />
+            </View>
+            <Text style={[styles.vitalValue, { color: '#79C9C5' }]}>
+              {statewideChange}m
+            </Text>
+            <Text style={styles.vitalSubtext}>Slight Decline</Text>
+          </View>
+
+          {/* Forecast Risk */}
+          <View style={styles.vitalCard}>
+            <Text style={styles.vitalLabel}>FORECAST RISK (90 Day)</Text>
+            <View style={[styles.vitalIconBg, { backgroundColor: '#FEF3C7' }]}>
+              <AlertTriangle size={28} color="#F59E0B" />
+            </View>
+            <Text style={[styles.vitalValue, { color: '#F59E0B' }]}>
+              {forecastRisk}
+            </Text>
+            <Text style={styles.vitalSubtext}>Based on current usage</Text>
+          </View>
+
+          {/* Data Freshness */}
+          <View style={styles.vitalCard}>
+            <Text style={styles.vitalLabel}>DATA FRESHNESS</Text>
+            <View style={[styles.vitalIconBg, { backgroundColor: '#DBEAFE' }]}>
+              <CheckCircle size={28} color="#3F9AAE" />
+            </View>
+            <Text style={[styles.vitalValue, { color: '#3F9AAE' }]}>
+              Live
+            </Text>
+            <Text style={styles.vitalSubtext}>Last sync: {lastSyncMinutes} mins ago</Text>
+          </View>
+        </Animated.View>
+
+        {/* Main Actions */}
+        <View style={styles.actionsSection}>
+          <Text style={styles.sectionTitle}>MAIN ACTIONS</Text>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(tabs)/analytics')}
+            activeOpacity={0.95}
+          >
+            <View style={styles.actionButtonLeft}>
+              <TrendingUp size={24} color="#fff" />
+              <Text style={styles.actionButtonText}>Historical Trends</Text>
+            </View>
+            <ChevronRight size={20} color="rgba(255,255,255,0.6)" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => router.push('/(tabs)/predictions')}
+            activeOpacity={0.95}
+          >
+            <View style={styles.actionButtonLeft}>
+              <MapPin size={24} color="#fff" />
+              <Text style={styles.actionButtonText}>DWLR Stations</Text>
+            </View>
+            <ChevronRight size={20} color="rgba(255,255,255,0.6)" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Recent Anomalies */}
+        <View style={styles.anomaliesSection}>
+          <View style={styles.anomaliesHeader}>
+            <Text style={styles.sectionTitle}>RECENT ANOMALIES</Text>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/alerts')}>
+              <Text style={styles.seeAllButton}>See All</Text>
+            </TouchableOpacity>
+          </View>
+
+          {recentAnomalies.length === 0 ? (
+            <View style={styles.emptyState}>
+              <CheckCircle size={32} color="#10b981" />
+              <Text style={styles.emptyStateText}>No recent anomalies</Text>
             </View>
           ) : (
-            <View style={styles.estimateActions}>
-              <TouchableOpacity style={styles.enableButton} onPress={requestLocationPermission}>
-                <MapPin size={16} color="#ffffff" />
-                <Text style={styles.enableButtonText}>Enable Location</Text>
-              </TouchableOpacity>
+            <View style={styles.anomaliesList}>
+              {recentAnomalies.map((anomaly, index) => {
+                const timeAgo = Math.floor(
+                  (Date.now() - new Date(anomaly.timestamp).getTime()) / (1000 * 60 * 60)
+                );
+                
+                return (
+                  <View key={anomaly.id} style={styles.anomalyCard}>
+                    <View style={styles.anomalyIconBg}>
+                      <MapPin size={24} color="#79C9C5" />
+                    </View>
+                    <View style={styles.anomalyContent}>
+                      <Text style={styles.anomalyId}>DWLR #{anomaly.stationId}</Text>
+                      <Text style={styles.anomalyStation}>{anomaly.stationName}</Text>
+                    </View>
+                    <View style={styles.anomalyRight}>
+                      <Text style={[
+                        styles.anomalyValue,
+                        { color: anomaly.type === 'critical' ? '#F96E5B' : '#3F9AAE' }
+                      ]}>
+                        {anomaly.type === 'critical' ? '-0.85m' : '+0.12m'}
+                      </Text>
+                      <Text style={styles.anomalyTime}>{timeAgo}h ago</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
           )}
         </View>
-      </View>
 
-      {/* Map */}
-      <View style={styles.mapContainer}>
-        <StationMap
-          stations={filteredStations}
-          userLocation={userLocation}
-          onStationPress={(station) => router.push(`/station/${station.id}`)}
-        />
-      </View>
-
-      {/* Bottom Sheet */}
-      <View style={[styles.bottomSheet, isBottomSheetExpanded && styles.bottomSheetExpanded]}>
-        <TouchableOpacity
-          style={styles.bottomSheetHandle}
-          onPress={() => setIsBottomSheetExpanded(!isBottomSheetExpanded)}
+        {/* Critical Alert Banner - At Bottom */}
+        <Animated.View 
+          style={[
+            styles.alertBanner,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }]
+            }
+          ]}
         >
-          <View style={styles.handle} />
-        </TouchableOpacity>
-
-        <View style={styles.bottomSheetHeader}>
-          <Text style={styles.bottomSheetTitle}>
-            {userLocation ? 'Nearby Stations' : 'Featured Stations'}
-          </Text>
-          <Text style={styles.bottomSheetCount}>
-            {nearbyStations.length} stations
-            {userLocation && ' • Sorted by distance'}
-          </Text>
-        </View>
-
-        <FlatList
-          data={nearbyStations}
-          keyExtractor={(station) => station.id}
-          renderItem={({ item: station }) => (
-            <StationCard
-              station={station}
-              onPress={() => router.push(`/station/${station.id}`)}
-            />
-          )}
-          style={styles.stationsList}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 24 }}
-        />
-      </View>
-    </View>
+          <View style={styles.alertIconLarge}>
+            <AlertTriangle size={60} color="rgba(255,255,255,0.1)" />
+          </View>
+          <View style={styles.alertContent}>
+            <View style={styles.alertHeader}>
+              <AlertTriangle size={14} color="#fff" />
+              <Text style={styles.alertBadge}>CRITICAL ALERT</Text>
+            </View>
+            <Text style={styles.alertTitle}>Abnormal Decline Detected</Text>
+            <Text style={styles.alertDescription}>
+              {criticalStations} stations in the Northern Basin show a -1.2m deviation. Recharge potential is failing to meet current demand.
+            </Text>
+            <TouchableOpacity style={styles.alertButton} activeOpacity={0.8}>
+              <Text style={styles.alertButtonText}>Analyze Anomalies</Text>
+              <ArrowRight size={14} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </ScrollView>
+    </LinearGradient>
   );
 }
 
-export default function MapScreen() {
-  return (
-    <MapScreenContent />
-  );
+export default function HomeScreen() {
+  return <HomeScreenContent />;
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#FFE2AF", // Sunset cream
   },
+  // Header
   header: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "white",
+    paddingVertical: 20,
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#E5E7EB",
   },
   headerLeft: {
-    flex: 1,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: "#64748b",
-    marginTop: 2,
-  },
-  locationContainer: {
-    marginTop: 4,
-  },
-  locationStatus: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#3F9AAE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  headerDate: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    letterSpacing: 1.5,
+    marginBottom: 2,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#1A1A1A",
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   locationText: {
     fontSize: 12,
     color: "#64748b",
-    marginLeft: 4,
+    fontWeight: "500",
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
   },
   headerButton: {
-    padding: 8,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: "white",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  searchBar: {
-    flex: 1,
-    flexDirection: "row",
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#F9FAFB",
     alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  filterButton: {
-    backgroundColor: "#e0f2fe",
-    borderRadius: 12,
-    padding: 12,
     justifyContent: "center",
-    alignItems: "center",
+    position: "relative",
   },
-  mapContainer: {
+  notificationDot: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#F96E5B",
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  content: {
     flex: 1,
-  },
-  estimateContainer: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    backgroundColor: "#ffffff",
+    paddingTop: 24,
   },
-  estimateCard: {
-    backgroundColor: "#e0f2fe",
+  // Daily Insight Banner
+  dailyBanner: {
+    backgroundColor: "#3F9AAE", // Ocean blue - darker than seafoam
+    borderRadius: 20,
+    padding: 24,
+    marginBottom: 24,
+    shadowColor: "#3F9AAE",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  bannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  bannerTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.5,
+  },
+  bannerDescription: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.95)",
+    lineHeight: 21,
+    marginBottom: 16,
+    fontWeight: "500",
+  },
+  bannerAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 12,
-    padding: 16,
+    alignSelf: "flex-start",
+  },
+  bannerActionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#3F9AAE",
+  },
+  // Key Vitals Grid
+  vitalsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+    marginBottom: 24,
+  },
+  vitalCard: {
+    width: "47%",
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 18,
+    alignItems: "center",
     borderWidth: 1,
-    borderColor: "#bae6fd",
+    borderColor: "rgba(255,255,255,0.6)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  vitalLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  vitalIconBg: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+  },
+  vitalValue: {
+    fontSize: 26,
+    fontWeight: "900",
+    lineHeight: 30,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  vitalTotal: {
+    fontSize: 18,
+    fontWeight: "400",
+    color: "#9CA3AF",
+  },
+  vitalSubtext: {
+    fontSize: 11,
+    color: "#9CA3AF",
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  // Critical Alert Banner
+  alertBanner: {
+    position: "relative",
+    backgroundColor: "#F96E5B",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    overflow: "hidden",
+    shadowColor: "#F96E5B",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  alertIconLarge: {
+    position: "absolute",
+    top: 0,
+    right: 16,
+    opacity: 1,
+  },
+  alertContent: {
+    position: "relative",
+    zIndex: 10,
+  },
+  alertHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  alertBadge: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 1.5,
+  },
+  alertTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 4,
+  },
+  alertDescription: {
+    fontSize: 14,
+    color: "rgba(255,255,255,0.9)",
+    lineHeight: 21,
+    marginBottom: 16,
+  },
+  alertButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignSelf: "flex-start",
+  },
+  alertButtonText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#fff",
+    textTransform: "uppercase",
+    letterSpacing: 1.5,
+  },
+  // Stats Grid
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+    marginBottom: 24,
+  },
+  statCard: {
+    width: "47%",
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.6)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+    minHeight: 140,
+    justifyContent: "space-between",
+  },
+  statHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 16,
+  },
+  statIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  statBottom: {
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: "#1A1A1A",
+    letterSpacing: -1,
+  },
+  statTrend: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+  },
+  statTrendText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#F96E5B",
+  },
+  progressBarContainer: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "#F3F4F6",
+    borderRadius: 4,
+    overflow: "hidden",
+    marginTop: 8,
+  },
+  progressBar: {
+    height: "100%",
+    backgroundColor: "#3F9AAE",
+    borderRadius: 4,
+  },
+  // Actions Section
+  actionsSection: {
+    marginBottom: 32,
+  },
+  sectionTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#9CA3AF",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+    marginBottom: 12,
+    marginLeft: 4,
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#3F9AAE",
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    height: 64,
+    marginBottom: 12,
+    shadowColor: "#3F9AAE",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  actionButtonLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+  },
+  actionButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.5,
+  },
+  // Anomalies Section
+  anomaliesSection: {
+    marginBottom: 24,
+  },
+  anomaliesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  seeAllButton: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#3F9AAE",
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 40,
+    gap: 12,
+  },
+  emptyStateText: {
+    fontSize: 14,
+    color: "#9CA3AF",
+    fontWeight: "500",
+  },
+  anomaliesList: {
+    gap: 12,
+  },
+  anomalyCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 20,
+    gap: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.6)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
   },
-  estimateHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  estimateIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#ffffff",
+  anomalyIconBg: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "rgba(121, 201, 197, 0.1)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
   },
-  estimateTitle: {
-    fontSize: 14,
-    color: "#0369a1",
-    marginBottom: 6,
-    fontWeight: "600",
+  anomalyContent: {
+    flex: 1,
   },
-  liveBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#fee2e2",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#ef4444",
-    marginRight: 6,
-  },
-  liveBadgeText: {
-    fontSize: 12,
-    color: "#b91c1c",
-    fontWeight: "600",
-  },
-  estimateValueRow: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    marginBottom: 4,
-  },
-  estimateValue: {
-    fontSize: 28,
+  anomalyId: {
+    fontSize: 10,
     fontWeight: "700",
-    color: "#0ea5e9",
-  },
-  estimateUnit: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0ea5e9",
-    marginLeft: 6,
+    color: "#9CA3AF",
+    letterSpacing: -0.2,
+    textTransform: "uppercase",
     marginBottom: 2,
   },
-  estimatePlaceholder: {
-    fontSize: 14,
-    color: "#075985",
-    opacity: 0.9,
+  anomalyStation: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1A1A1A",
   },
-  estimateInfoRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  anomalyRight: {
+    alignItems: "flex-end",
   },
-  estimateSubtext: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#075985",
-    marginLeft: 6,
+  anomalyValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginBottom: 4,
   },
-  estimateActions: {
-    marginTop: 8,
-    flexDirection: "row",
-    justifyContent: "flex-start",
-  },
-  enableButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#0ea5e9",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  enableButtonText: {
-    color: "#ffffff",
-    fontWeight: "600",
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  bottomSheet: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "white",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 12,
-    height: 280,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-    zIndex: 50,
-  },
-  bottomSheetExpanded: {
-    height: "60%",
-    zIndex: 60,
-  },
-  bottomSheetHandle: {
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#cbd5e1",
-    borderRadius: 2,
-  },
-  bottomSheetHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
-  },
-  bottomSheetTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#1e293b",
-  },
-  bottomSheetCount: {
-    fontSize: 14,
-    color: "#64748b",
-  },
-  stationsList: {
-    flex: 1,
-    paddingHorizontal: 20,
+  anomalyTime: {
+    fontSize: 11,
+    fontWeight: "500",
+    color: "#9CA3AF",
   },
 });

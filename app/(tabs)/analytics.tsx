@@ -1,25 +1,24 @@
 import { AnalyticsCard } from "@/components/analytics-card";
 import { TrendChart } from "@/components/trend-chart";
 import {
-  DatabaseReading,
-  StationsProvider,
-  useStations,
+    StationsProvider,
+    useStations
 } from "@/providers/stations-provider";
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from "expo-router";
 import {
-  BarChart3,
-  Download,
-  MapPin,
-  TrendingDown,
-  TrendingUp,
+    Download,
+    MapPin,
+    TrendingDown,
+    TrendingUp
 } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -110,7 +109,10 @@ function AnalyticsScreenContent() {
   }, [analytics.nearbyStations, selectedTimeframe, getStationReadings]);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <LinearGradient
+      colors={['#FFFFFF', '#FFF7EA', '#FFE2AF']}
+      style={[styles.container, { paddingTop: insets.top }]}
+    >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -208,7 +210,7 @@ function AnalyticsScreenContent() {
         <View style={styles.regionalContainer}>
           <Text style={styles.sectionTitle}>Regional Analysis</Text>
           <View style={styles.regionalGrid}>
-            {analytics.regionalData.map((region) => (
+            {analytics.regionalData.map((region: any) => (
               <View key={region.state} style={styles.regionalCard}>
                 <View style={styles.regionalCardContent}>
                   <Text style={styles.regionalState}>{region.state}</Text>
@@ -250,7 +252,7 @@ function AnalyticsScreenContent() {
           </View>
         </View>
       </ScrollView>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -273,9 +275,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: "white",
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#E5E7EB",
   },
   headerLeft: {
     flex: 1,
@@ -283,7 +285,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 20,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "#1A1A1A",
   },
   headerSubtitle: {
     fontSize: 14,
