@@ -1,3 +1,4 @@
+import { ChatbotFAB } from "@/components/ChatbotFAB";
 import { useAuth } from "@/providers/auth-provider";
 import { useStations } from "@/providers/stations-provider";
 import {
@@ -521,6 +522,9 @@ function HomeScreenContent() {
           </View>
         </Animated.View>
       </ScrollView>
+
+      {/* Floating Chatbot Button */}
+      <ChatbotFAB />
     </LinearGradient>
   );
 }
